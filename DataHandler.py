@@ -234,4 +234,73 @@ class GetDataInfo:
 create a class that clean the data 
 """
 class DataClean:
-    pass
+
+    #drop unrelevant columns
+    @staticmethod
+    def drop_unrelevat_cols(data_dict:Dict[str,pd.DataFrame])->dict:
+        cols_to_keep = ["ISBN","Book-Title","Book-Author","Year-Of-Publication","Publisher"]
+        if "Books" in data_dict:
+            data_dict["Books"] = data_dict["Books"][cols_to_keep]
+            logging.info("drop unrelevat cols from Books, ratings and users dont have unrelevat cols")
+        else:
+            logging.warning("Books not found in data_dict")
+        return data_dict
+    
+    
+    #standarize all the cols heads making them lower case without special chars
+    @staticmethod
+    def cols_heads_standart(data_dict:Dict[str,pd.DataFrame])->dict:
+        for file, df in data_dict.items():
+            original_col = df.columns.to_list()
+            cols = df.columns
+            cols = cols.str.lower()
+            cols = cols.str.replace(' ', '_', regex=False)
+            cols = cols.str.replace('-', '_', regex=False)
+            cols = cols.str.replace(r'[^a-z0-9_]', '', regex=True)
+            df.columns = cols
+        logging.info("cols head transfefr to lower case seperate by '_' and witohut specil chars")
+        return data_dict
+    
+    #clean the data from Books dataFrame 
+    #handle missing values
+    #handle with incorrect vals in a row
+
+    ### make sure to use it before the func cols_heads_standart!!!!!! ###
+    @staticmethod
+    def clean_books_df(data_dict:Dict[str,pd.DataFrame])->dict:
+        fill_vals = {
+            "ISBN" : "unKnown",
+            "Book-Title" : "unKnown",
+            "Book-Author" : "unKnown",
+            "Year-Of-Publication" : 0,
+            "Publisher" : "unKnown"
+        }
+        data_dict["Books"] = data_dict["Books"].fillna(value=fill_vals)
+        logging.info("filled missing values in Books df")
+
+        df = data_dict["Books"]
+        four_digit_year_pattern = r"^\d{4}$"
+        year_df = df["Year-Of-Publication"].astype(str)
+        is_valid_year_mask = year_df.str.match(four_digit_year_pattern)
+        df.loc[~is_valid_year_mask, 'Year-Of-Publication'] = 0
+        logging.info("Corrected invalid entries in 'Year-Of-Publication' column.")
+        df['Year-Of-Publication'] = pd.to_numeric(df['Year-Of-Publication'])
+        data_dict['Books'] = df
+        return data_dict
+    
+
+    #clean the data from Users dataFrame 
+    #handle missing values
+    #remove unrizenable ages below 5 and above 100
+
+    ### make sure to use it before the func cols_heads_standart!!!!!! ###
+    def clean_users_df(data_dict:Dict[str,pd.DataFrame])->dict:
+        fill_vals = {
+            "User-ID" : "unKnown",
+            "Location" : "unKnown",
+            "Age" : 0
+        }
+        data_dict["Users"] = data_dict["Users"].fillna(value=fill_vals)
+        logging.info("filled missing values in Users df")
+
+        
