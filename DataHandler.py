@@ -4,6 +4,7 @@ from pathlib import Path
 from kaggle.api.kaggle_api_extended import KaggleApi
 from typing import Dict
 import logging
+from category_encoders import HashingEncoder
 
 logging.basicConfig(level=logging.INFO)
 
@@ -317,7 +318,7 @@ class DataClean:
     ### make sure to use it before the func cols_heads_standart!!!!!! ###
     def clean_ratings_df(data_dict:Dict[str,pd.DataFrame])->dict:
         fill_vals = {
-            "user_id" : "unKnown",
+            "user_id" : 0,
             "isbn" : "unKnown",
             "book_rating" : 0
         }
@@ -336,9 +337,9 @@ class DataClean:
     @staticmethod
     def data_ensure_type(data_dict:Dict[str,pd.DataFrame]):
         col_type = {
-            "Users" : {"user_id" : "object", "location" : "object", "age" : "Int64"},
+            "Users" : {"user_id" : "Int64", "location" : "object", "age" : "Int64"},
             "Books" : {"isbn" : "object", "book_title" : "object", "book_author" : "object", "year_of_publication" : "Int64", "publisher" : "object"},
-            "Ratings" : {"user_id" : "object", "isbn" : "object", "book_rating" : "Int64"}
+            "Ratings" : {"user_id" : "Int64", "isbn" : "object", "book_rating" : "Int64"}
         }
 
         for file, df in data_dict.items():
@@ -392,4 +393,72 @@ class DataClean:
         data_dict = DataClean.delete_dups(data_dict)
         data_dict = DataClean.uniform_object_cols(data_dict)
         data_dict = DataClean.data_ensure_type(data_dict)
+        logging.info("data cleaned successfully")
         return data_dict
+    
+
+    """
+    create a class to preprocess the data and preper
+    the data to fit to the ML models
+    """
+
+class DataPreProcess:
+    
+### preprocess the data for context based model ###
+    
+#create user item matrix with rows user_id cols isbn and rating calues that calculate the mean rating
+    def user_item_matrix(data_dict:Dict[str,pd.DataFrame]):
+        df = data_dict["Ratings"]
+        pivote_df = df.pivot_table(
+            index="user_id",
+            columns="isbn",
+            values="book_rating",
+            aggfunc="mean",
+            fill_value=0
+        )
+        logging.info("successfully created user item matrix")
+        return pivote_df
+
+    
+### preprocess context based model ###
+
+#create the context based data frame for the model
+    def context_based_df(data_dict:Dict[str,pd.DataFrame])->pd.DataFrame:
+        try:
+            rating_df = data_dict["Ratings"]
+            book_df = data_dict["Books"]
+            user_df = data_dict["Users"]
+            merged_df1 = pd.merge(rating_df,user_df,on="user_id")
+            merged_df2 = pd.merge(merged_df1,book_df, on="isbn")
+            logging.info("merged the 3 clean data frames in the data dictionary")
+
+            merged_df2["book_mean_rate"] = merged_df2.groupby("isbn")["book_rating"].transform("mean")
+            merged_df2["rating_count"] = merged_df2.groupby("isbn")["book_rating"].transform("count")
+            logging.info("added to the data rfame mean moovie rate and rating count")
+
+            cols_to_drop = ["user_id","isbn","book_title"]
+            df = merged_df2.drop(cols_to_drop, axis=1)
+            logging.info("drop unrelevant columns")
+            return df
+        
+        except Exception as e:
+            logging.error("possibly the dict keys are lower cases, returning empty data frame")
+            return pd.DataFrame()
+        
+#encode the data frame from context_based_df
+#col "location" woth one hot encoding
+#cols "publishers" and "author" with hashing encoding
+    def context_based_encoding(df:pd.DataFrame)->pd.DataFrame:
+        location_encoded_df = pd.get_dummies(df,columns=["location"], drop_first=True)
+        logging.info("encoded loaction with one hot encoding")
+        encoder = HashingEncoder(n_components=64,cols=["book_author","publisher"])
+        hash_encoded_df = encoder.fit_transform(location_encoded_df)
+        logging.info("hash encoding successfully")
+        return hash_encoded_df
+    
+### general preprocessing functions for all the data that need to be preprocessed ###
+
+
+
+
+
