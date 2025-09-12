@@ -407,6 +407,7 @@ class DataPreProcess:
 ### preprocess the data for context based model ###
     
 #create user item matrix with rows user_id cols isbn and rating calues that calculate the mean rating
+    @staticmethod
     def user_item_matrix(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Ratings"]
         pivote_df = df.pivot_table(
@@ -423,6 +424,7 @@ class DataPreProcess:
 ### preprocess context based model ###
 
 #create the context based data frame for the model
+    @staticmethod
     def context_based_df(data_dict:Dict[str,pd.DataFrame])->pd.DataFrame:
         try:
             rating_df = data_dict["Ratings"]
@@ -448,6 +450,7 @@ class DataPreProcess:
 #encode the data frame from context_based_df
 #col "location" woth one hot encoding
 #cols "publishers" and "author" with hashing encoding
+    @staticmethod
     def context_based_encoding(df:pd.DataFrame)->pd.DataFrame:
         location_encoded_df = pd.get_dummies(df,columns=["location"], drop_first=True)
         logging.info("encoded loaction with one hot encoding")
@@ -458,7 +461,11 @@ class DataPreProcess:
     
 ### general preprocessing functions for all the data that need to be preprocessed ###
 
-
+#filter the data frame from books how got less then 3 rates and users how rates less then 2 books
+    @staticmethod
+    def filter_df(data_dict:Dict[str,pd.DataFrame])->Dict[str,pd.DataFrame]:
+        book_df = data_dict["books"]
+        rating_df = data_dict["rating"]
 
 
 
