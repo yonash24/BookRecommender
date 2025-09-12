@@ -107,7 +107,7 @@ class GetDataInfo:
     @staticmethod
     def get_rating_destribution(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Ratings"]
-        rating_dist = df["Book-Rating"].value_counts()
+        rating_dist = df["book_rating"].value_counts()
         final_data = rating_dist.sort_index()
         final_data.plot(kind="bar")
         plt.title("rating values distribution")
@@ -120,7 +120,7 @@ class GetDataInfo:
     @staticmethod
     def book_mean_rate(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Ratings"]
-        plot_df = df.groupby("ISBN")["Book-Rating"].mean()
+        plot_df = df.groupby("isbn")["book_rating"].mean()
         plt.hist(plot_df, bins=20, color="skyblue", edgecolor="black")
         plt.title("book mean rate")
         plt.xlabel("mean rating")
@@ -132,7 +132,7 @@ class GetDataInfo:
     @staticmethod
     def book_median_rate(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Ratings"]
-        plot_df = df.groupby("ISBN")["Book-Rating"].median()
+        plot_df = df.groupby("isbn")["book_rating"].median()
         plt.hist(plot_df, bins=20, color="skyblue", edgecolor="black")
         plt.title("book median rate")
         plt.xlabel("book isbn")
@@ -146,7 +146,7 @@ class GetDataInfo:
     @staticmethod
     def user_mean_age(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Users"]
-        plot_df = df["Age"].dropna()
+        plot_df = df["age"].dropna()
         plt.hist(plot_df, bins=20, color="skyblue", edgecolor="black")
         plt.title("user age distribution")
         plt.xlabel("age")
@@ -157,7 +157,7 @@ class GetDataInfo:
     #get the locations with the highest amount of raters
     def highest_raters_location(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Users"]
-        location_df = df["Location"].value_counts().head(20)
+        location_df = df["location"].value_counts().head(20)
         location_df.plot(kind="bar",color="skyblue", edgecolor="black")
         plt.title("top raters location")
         plt.xlabel("location")
@@ -173,17 +173,17 @@ class GetDataInfo:
     @staticmethod
     def year_range(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Books"]
-        min_year = df["Year-Of-Publication"].min()
-        max_year = df["Year-Of-Publication"].max()
+        min_year = df["year_of_publication"].min()
+        max_year = df["year_of_publication"].max()
         logging.info(f"the min year is:{min_year} n\ the max year is: {max_year}")
         return min_year, max_year
 
-    #get the Number of Unique Authors and Publishers
+    #get the Number of Unique Authors and publishers
     @staticmethod
     def unique_authors_and_publishers(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Books"]
-        publishers_amount = df["Publisher"].nunique()
-        writers_amount = df["Book-Author"].nunique()
+        publishers_amount = df["publisher"].nunique()
+        writers_amount = df["book_author"].nunique()
         logging.info(f"unique publishers amount {publishers_amount}, unique writers amount {writers_amount}")
         return publishers_amount, writers_amount
 
@@ -192,7 +192,7 @@ class GetDataInfo:
     #get the most popular books
     def highest_raters_location(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Ratings"]
-        rates_df = df["ISBN"].value_counts().head(20)
+        rates_df = df["isbn"].value_counts().head(20)
         rates_df.plot(kind="bar",color="skyblue", edgecolor="black")
         plt.title("most popular books")
         plt.xlabel("books")
@@ -206,7 +206,7 @@ class GetDataInfo:
     @staticmethod
     def book_mean_rate(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Ratings"]
-        plot_df = df.groupby("ISBN")["Book-Rating"].mean()
+        plot_df = df.groupby("isbn")["book_rating"].mean()
         top_books = plot_df.sort_values(ascending=False).head(20)
         top_books.plot(kind="bar", color="skyblue", edgecolor="black")
         plt.title("book mean rate")
@@ -220,7 +220,7 @@ class GetDataInfo:
     @staticmethod
     def most_active_users(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Ratings"]
-        rates_df = df["User-ID"].value_counts().head(20)
+        rates_df = df["user_id"].value_counts().head(20)
         rates_df.plot(kind="bar",color="skyblue", edgecolor="black")
         plt.title("most acite users")
         plt.xlabel("user id")
@@ -238,7 +238,7 @@ class DataClean:
     #drop unrelevant columns
     @staticmethod
     def drop_unrelevat_cols(data_dict:Dict[str,pd.DataFrame])->dict:
-        cols_to_keep = ["ISBN","Book-Title","Book-Author","Year-Of-Publication","Publisher"]
+        cols_to_keep = ["isbn","book_title","book_author","year_of_publication","publisher"]
         if "Books" in data_dict:
             data_dict["Books"] = data_dict["Books"][cols_to_keep]
             logging.info("drop unrelevat cols from Books, ratings and users dont have unrelevat cols")
@@ -269,22 +269,22 @@ class DataClean:
     @staticmethod
     def clean_books_df(data_dict:Dict[str,pd.DataFrame])->dict:
         fill_vals = {
-            "ISBN" : "unKnown",
-            "Book-Title" : "unKnown",
-            "Book-Author" : "unKnown",
-            "Year-Of-Publication" : 0,
-            "Publisher" : "unKnown"
+            "isbn" : "unKnown",
+            "book_title" : "unKnown",
+            "book_author" : "unKnown",
+            "year_of_publication" : 0,
+            "publisher" : "unKnown"
         }
         data_dict["Books"] = data_dict["Books"].fillna(value=fill_vals)
         logging.info("filled missing values in Books df")
 
         df = data_dict["Books"]
         four_digit_year_pattern = r"^\d{4}$"
-        year_df = df["Year-Of-Publication"].astype(str)
+        year_df = df["year_of_publication"].astype(str)
         is_valid_year_mask = year_df.str.match(four_digit_year_pattern)
-        df.loc[~is_valid_year_mask, 'Year-Of-Publication'] = 0
-        logging.info("Corrected invalid entries in 'Year-Of-Publication' column.")
-        df['Year-Of-Publication'] = pd.to_numeric(df['Year-Of-Publication'])
+        df.loc[~is_valid_year_mask, 'year_of_publication'] = 0
+        logging.info("Corrected invalid entries in 'year_of_publication' column.")
+        df['year_of_publication'] = pd.to_numeric(df['year_of_publication'])
         data_dict['Books'] = df
         return data_dict
     
@@ -296,11 +296,100 @@ class DataClean:
     ### make sure to use it before the func cols_heads_standart!!!!!! ###
     def clean_users_df(data_dict:Dict[str,pd.DataFrame])->dict:
         fill_vals = {
-            "User-ID" : "unKnown",
-            "Location" : "unKnown",
-            "Age" : 0
+            "user_id" : "unKnown",
+            "location" : "unKnown",
+            "age" : 0
         }
         data_dict["Users"] = data_dict["Users"].fillna(value=fill_vals)
         logging.info("filled missing values in Users df")
 
-        
+        df = data_dict["Users"]
+        fileted_df = df[(df["age"] < 100) & (df["age"] > 5)]
+        data_dict["Users"] = fileted_df
+        logging.info("filter unrizenable ages from the dataFrame")
+        return data_dict
+    
+    
+    #clean the data from Ratings dataFrame 
+    #handle missing values
+    #remove unrizenable ages below 5 and above 100
+
+    ### make sure to use it before the func cols_heads_standart!!!!!! ###
+    def clean_ratings_df(data_dict:Dict[str,pd.DataFrame])->dict:
+        fill_vals = {
+            "user_id" : "unKnown",
+            "isbn" : "unKnown",
+            "book_rating" : 0
+        }
+        data_dict["Ratings"] = data_dict["Ratings"].fillna(value=fill_vals)
+        logging.info("filled missing values in Ratings df")
+
+        df = data_dict["Ratings"]
+        fileted_df = df[df["book_rating"] > 0]
+        data_dict["Ratings"] = fileted_df
+        logging.info("filter unrated books from the dataFrame")
+        return data_dict
+    
+    #make every column in the dataframe to a specific type 
+    #ensure a numeric col is numeric a string col is object etc
+    ### use right after drop_unrelevat_cols ###
+    @staticmethod
+    def data_ensure_type(data_dict:Dict[str,pd.DataFrame]):
+        col_type = {
+            "Users" : {"user_id" : "object", "location" : "object", "age" : "Int64"},
+            "Books" : {"isbn" : "object", "book_title" : "object", "book_author" : "object", "year_of_publication" : "Int64", "publisher" : "object"},
+            "Ratings" : {"user_id" : "object", "isbn" : "object", "book_rating" : "Int64"}
+        }
+
+        for file, df in data_dict.items():
+            if file in col_type:
+                try:
+                    cur_type = col_type[file]
+                    data_dict[file] = data_dict[file].astype(cur_type)
+                    logging.info(f"the cols in file {file} have successfully enforced")
+                except Exception as e:
+                    logging.error(f"Could not enforce types for '{file}'. Error: {e}")
+
+
+        return data_dict
+    
+    #delete duplicate rows
+    @staticmethod
+    def delete_dups(data_dict: Dict[str,pd.DataFrame])->dict:
+        for file, df in data_dict.items():
+            data_dict[file] = df.drop_duplicates()
+            logging.info("erased all duplicades in th data frames")
+        return data_dict
+    
+    #uniform the text in object type cols to be uniformity
+    #lower case letters seperated by "_" and witohut special chars
+    @staticmethod
+    def uniform_object_cols(data_dict:Dict[str,pd.DataFrame])->Dict[str,pd.DataFrame]:
+        for file, df in data_dict.items():
+            for col in df:
+                if df[col].dtype == "object":
+                        try:
+                            df[col] = (df[col].str.lower()
+                            .str.replace('-', '_')
+                            .str.replace(' ', '_')
+                            .str.replace(',', '_')
+                            .str.replace(r'[^a-z0-9_]', '', regex=True)
+                            .str.strip('_'))  
+                            logging.info(f"uniformed the text in col {col} at data frame {file}")
+                        except Exception as e:
+                            logging.error(f"error occured in col {col} at data frame {file} coulnt fit the text")
+
+        return data_dict
+    
+    #create a data cleaning pipeline with all the functions in the class
+    @staticmethod
+    def cleaning_data_pipeline(data_dict:Dict[str,pd.DataFrame])->Dict[str,pd.DataFrame]:
+        data_dict = DataClean.cols_heads_standart(data_dict)
+        data_dict = DataClean.drop_unrelevat_cols(data_dict)
+        data_dict = DataClean.clean_users_df(data_dict)
+        data_dict = DataClean.clean_books_df(data_dict)
+        data_dict = DataClean.clean_ratings_df(data_dict)
+        data_dict = DataClean.delete_dups(data_dict)
+        data_dict = DataClean.uniform_object_cols(data_dict)
+        data_dict = DataClean.data_ensure_type(data_dict)
+        return data_dict
