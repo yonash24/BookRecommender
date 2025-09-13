@@ -65,9 +65,6 @@ class importData:
         data_dict = importData.to_dataFrme()
         return data_dict
 
-
-
-
 """
 create class to get info on the data 
 to understand the data and handling it
@@ -402,6 +399,10 @@ class DataClean:
     create a class to preprocess the data and preper
     the data to fit to the ML models
     """
+
+"""
+create a class that preprocess the data for the models
+"""
 
 class DataPreProcess:
     
