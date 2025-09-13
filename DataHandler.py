@@ -407,7 +407,7 @@ class DataPreProcess:
     
 ### preprocess the data for context based model ###
     
-#create user item matrix with rows user_id cols isbn and rating calues that calculate the mean rating
+    #create user item matrix with rows user_id cols isbn and rating calues that calculate the mean rating
     @staticmethod
     def user_item_matrix(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Ratings"]
@@ -421,7 +421,6 @@ class DataPreProcess:
         logging.info("successfully created user item matrix")
         return pivote_df
 
-    
 ### preprocess context based model ###
 
     #create the context based data frame for the model
@@ -439,15 +438,33 @@ class DataPreProcess:
             merged_df2["rating_count"] = merged_df2.groupby("isbn")["book_rating"].transform("count")
             logging.info("added to the data rfame mean moovie rate and rating count")
 
-            cols_to_drop = ["user_id","isbn","book_title"]
-            df = merged_df2.drop(cols_to_drop, axis=1)
-            logging.info("drop unrelevant columns")
-            return df
+            return merged_df2
         
         except Exception as e:
             logging.error("possibly the dict keys are lower cases, returning empty data frame")
             return pd.DataFrame()
         
+    #filter the data frame from books how got less then 3 rates and users how rates less then 2 books
+    @staticmethod
+    def filter_df(df:pd.DataFrame)->pd.DataFrame:
+        min_user_rate = 3
+        min_book_rate = 3
+        user_count = df["user_id"].value_counts()
+        books_count = df["isbn"].value_counts()
+        
+        active_user = user_count[user_count >= min_user_rate].index        
+        active_book = books_count[books_count >= min_book_rate].index        
+        
+        df = df[df["user_id"].isin(active_user)]
+        logging.info("removed all users who rated less then 3 books")
+        df = df[df["isbn"].isin(active_book)]
+        logging.info("removed all books who have less then 3 rates")
+
+        cols_to_drop = ["user_id","isbn","book_title"]
+        final_df = df.drop(cols_to_drop, axis=1)
+        logging.info("drop unrelevant columns for the next step")
+        return final_df
+    
     #encode the data frame from context_based_df
     #col "location" woth one hot encoding
     #cols "publishers" and "author" with hashing encoding
@@ -469,32 +486,24 @@ class DataPreProcess:
         logging.info("split the data into features data frame and target vector")
         return features_df, target_vector
         
+    #creating a pipeline for the context based model data preprocessing
+    @staticmethod
+    def context_based_data_preprocessing_pipeline(data_dict:Dict[str,pd.DataFrame])->Tuple[pd.DataFrame,pd.DataFrame,pd.Series,pd.Series]:
+        context_dict = DataPreProcess.context_based_df(data_dict)
+        filter_df = DataPreProcess.filter_df(context_dict)
+        encoding_df = DataPreProcess.context_based_encoding(filter_df)
+        initial_splitting = DataPreProcess.featurs_target_splitting(encoding_df)
+        final_data = DataPreProcess.split_data(initial_splitting)
+        return final_data
+
 ### general preprocessing functions for all the data that need to be preprocessed ###
 
-    #filter the data frame from books how got less then 3 rates and users how rates less then 2 books
-    @staticmethod
-    def filter_df(data_dict:Dict[str,pd.DataFrame])->Dict[str,pd.DataFrame]:
-        rating_df = data_dict["Ratings"]
-        min_user_rate = 3
-        min_book_rate = 3
-        user_count = rating_df["user_id"].value_counts()
-        books_count = rating_df["isbn"].value_counts()
-        
-        active_user = user_count[user_count >= min_user_rate].index        
-        active_book = books_count[books_count >= min_book_rate].index        
-        
-        rating_df = rating_df[rating_df["user_id"].isin(active_user)]
-        logging.info("removed all users who rated less then 3 books")
-        rating_df = rating_df[rating_df["isbn"].isin(active_book)]
-        logging.info("removed all books who have less then 3 rates")
-
-        data_dict["Ratings"] = rating_df
-        return data_dict
-    
     #split data into train and test 
     @staticmethod
-    def split_data(features:pd.DataFrame, target:pd.Series)->Tuple[pd.DataFrame,pd.DataFrame,pd.Series,pd.Series]:
+    def split_data(data:Tuple[pd.DataFrame, pd.Series])->Tuple[pd.DataFrame,pd.DataFrame,pd.Series,pd.Series]:
         try:    
+            features = data[0]
+            target = data[1]
             x_train, x_test, y_train, y_test = train_test_split(
                 features, target, test_size=0.2, random_state=42
             )
