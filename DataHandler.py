@@ -2,9 +2,10 @@ import pandas as pd
 import matplotlib.pyplot as plt
 from pathlib import Path
 from kaggle.api.kaggle_api_extended import KaggleApi
-from typing import Dict
+from typing import Dict, Tuple
 import logging
 from category_encoders import HashingEncoder
+from sklearn.model_selection import train_test_split
 
 logging.basicConfig(level=logging.INFO)
 
@@ -423,7 +424,7 @@ class DataPreProcess:
     
 ### preprocess context based model ###
 
-#create the context based data frame for the model
+    #create the context based data frame for the model
     @staticmethod
     def context_based_df(data_dict:Dict[str,pd.DataFrame])->pd.DataFrame:
         try:
@@ -447,9 +448,9 @@ class DataPreProcess:
             logging.error("possibly the dict keys are lower cases, returning empty data frame")
             return pd.DataFrame()
         
-#encode the data frame from context_based_df
-#col "location" woth one hot encoding
-#cols "publishers" and "author" with hashing encoding
+    #encode the data frame from context_based_df
+    #col "location" woth one hot encoding
+    #cols "publishers" and "author" with hashing encoding
     @staticmethod
     def context_based_encoding(df:pd.DataFrame)->pd.DataFrame:
         location_encoded_df = pd.get_dummies(df,columns=["location"], drop_first=True)
@@ -459,13 +460,48 @@ class DataPreProcess:
         logging.info("hash encoding successfully")
         return hash_encoded_df
     
+    #split the data into data frame features and target vector based on context based dataf rame
+    #get data frame from context_based_df
+    @staticmethod
+    def featurs_target_splitting(df:pd.DataFrame)->Tuple[pd.DataFrame,pd.Series]:
+        target_vector = df["book_rating"]
+        features_df = df.drop("book_rating",axis=1)
+        logging.info("split the data into features data frame and target vector")
+        return features_df, target_vector
+        
 ### general preprocessing functions for all the data that need to be preprocessed ###
 
-#filter the data frame from books how got less then 3 rates and users how rates less then 2 books
+    #filter the data frame from books how got less then 3 rates and users how rates less then 2 books
     @staticmethod
     def filter_df(data_dict:Dict[str,pd.DataFrame])->Dict[str,pd.DataFrame]:
-        book_df = data_dict["books"]
-        rating_df = data_dict["rating"]
+        rating_df = data_dict["Ratings"]
+        min_user_rate = 3
+        min_book_rate = 3
+        user_count = rating_df["user_id"].value_counts()
+        books_count = rating_df["isbn"].value_counts()
+        
+        active_user = user_count[user_count >= min_user_rate].index        
+        active_book = books_count[books_count >= min_book_rate].index        
+        
+        rating_df = rating_df[rating_df["user_id"].isin(active_user)]
+        logging.info("removed all users who rated less then 3 books")
+        rating_df = rating_df[rating_df["isbn"].isin(active_book)]
+        logging.info("removed all books who have less then 3 rates")
 
-
-
+        data_dict["Ratings"] = rating_df
+        return data_dict
+    
+    #split data into train and test 
+    @staticmethod
+    def split_data(features:pd.DataFrame, target:pd.Series)->Tuple[pd.DataFrame,pd.DataFrame,pd.Series,pd.Series]:
+        try:    
+            x_train, x_test, y_train, y_test = train_test_split(
+                features, target, test_size=0.2, random_state=42
+            )
+            logging.info("splitted the data into train and tets data")
+            return x_train, x_test, y_train, y_test
+        except Exception as e:
+            logging.error("failed to split the data into train and test")
+            return pd.DataFrame(), pd.DataFrame(), pd.Series(), pd.Series()
+        
+    
