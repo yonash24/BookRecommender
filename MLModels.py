@@ -1,4 +1,3 @@
-from typing import Tuple
 from DataHandler import DataPreProcess
 from sklearn.linear_model import LinearRegression
 import pandas as pd
@@ -9,7 +8,6 @@ from lightgbm import LGBMRegressor
 from sklearn.base import BaseEstimator
 import numpy as np
 from sklearn.metrics import mean_squared_error , r2_score
-from scipy.sparse import csr_matrix
 from sklearn.neighbors import KNeighborsRegressor, NearestNeighbors
 from surprise import SVD, Dataset, Reader
 from surprise.model_selection import train_test_split
@@ -90,12 +88,12 @@ class TrainModel:
 
 
 ### create train and evaluate users based model ###
-#get user-item matrix from user_item_matrix in DataPreProcessing
+#get user-item train matrix from split_user_item_matrix in DataPreProcessing
 
     #KNN model
     @staticmethod
-    def knn_user_based_model(user_item_matrix: pd.DataFrame):
-        user_item_spare = csr_matrix(user_item_matrix)
+    def knn_user_based_model(user_item_train_matrix: pd.DataFrame):
+        user_item_spare = csr_matrix(user_item_train_matrix)
         model = NearestNeighbors(metric="cosine", algorithm="brute")
         model.fit(user_item_spare)
         logging.info("successfully created user based model with KNN")
@@ -105,9 +103,9 @@ class TrainModel:
     
     #ALS model
     @staticmethod
-    def als_user_based_model(user_item_matrix:pd.DataFrame):
+    def als_user_based_model(user_item_train_matrix:pd.DataFrame):
         model = AlternatingLeastSquares(factors=50, regularization=0.01, iterations=20)
-        user_item_sparse = csr_matrix(user_item_matrix.values)
+        user_item_sparse = csr_matrix(user_item_train_matrix.values)
         model.fit(user_item_sparse.T)
         logging.info("ALS model creates and trained successfully")
         
@@ -116,27 +114,36 @@ class TrainModel:
     ## important!! SVD algorithm get Ratins dataframe not the item user matrix
 
     #svd model
+    #return the model the train set and the test set
     @staticmethod
     def svd_user_based_model(rating_df:pd.DataFrame):
         reader = Reader(rating_scale=(1,10))    #rating scale
         data = Dataset.load_from_df(rating_df[["user_id", "isbn", "book_rating"]], reader)   #surprise data object
-        train_set, testset = train_test_split(data, test_size=0.2, random_state=42)   #split the data imto 2 matrixes
+        train_set, testset = train_test_split(data, test_size=0.2, random_state=42)   #split the data into 2 matrixes
         model = SVD(n_factors=50, random_state=42)
         model.fit(train_set)
-        logging.inf("SVD model create and trained successfully")
-        return model
+        logging.info("SVD model create and trained successfully")
+        return model, train_set, testset
 
    
     #create user based predictions
 
     #KNN presiction
     @staticmethod
-    def user_based_knn_prediction(user_id:int, model:NearestNeighbors, user_item_matrix:pd.DataFrame, k=5):
+    def user_based_knn_prediction(user_id:int, model:NearestNeighbors, user_item_matrix:pd.DataFrame, k=5)->list:
         user_index = user_item_matrix.index.get_loc(user_id)   #get the user_index in the user item matrix
         user_vector = user_item_matrix.iloc[user_index].values.reshape(1,-1)
         distances, indices = model.kneighbors(user_vector, n_neighbors=k+1)
         logging.info("trained the model successfully")
         logging.info(f"Found {k} nearest neighbors for user {user_id}.")
+        neighbor_indices = indices.flatten()[1:]
+        neighbor_rating = user_item_matrix.iloc[neighbor_indices]
+        recommendation_score = neighbor_rating.mean(axis=0)
+        user_rated_book = user_item_matrix.iloc[user_index]
+        recommendation_score = recommendation_score[user_rated_book == 0]
+        top_recommends = recommendation_score.sort_values(ascending=False).head(k)
+        return list(top_recommends.items())
+
         return distances, indices
 
     #ALS prediction
@@ -152,13 +159,13 @@ class TrainModel:
             score = scores[i]
             recommendations.append((isbn, score))
             logging.info(f"Book ISBN: {isbn}, Score: {score:.2f}")
-        return recommendations[:10]
+        return recommendations
 
     #SVD prediction
     @staticmethod
-    def user_based_svd_prediction(user_id:int, model:SVD, rating_df:pd.DataFrame, num_recommendation = 5):
-        books_isbn = set(rating_df["isbn"].unique())
-        rated_isbn = set(rating_df[rating_df["user_id"] == user_id]["isbn"].unique())
+    def user_based_svd_prediction(user_id:int, model:SVD, test_df:pd.DataFrame, num_recommendation = 5):
+        books_isbn = set(test_df["isbn"].unique())
+        rated_isbn = set(test_df[test_df["user_id"] == user_id]["isbn"].unique())
         unrated_books = books_isbn - rated_isbn
         prediction = []
         for isbn in unrated_books:
@@ -167,3 +174,5 @@ class TrainModel:
         logging.info("created svd prediction")
         prediction.sort(key=lambda x: x.est, reverse=True)
         return prediction[:10]
+    
+

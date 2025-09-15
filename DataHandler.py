@@ -6,6 +6,8 @@ from typing import Dict, Tuple
 import logging
 from category_encoders import HashingEncoder
 from sklearn.model_selection import train_test_split
+from scipy.sparse import csr_matrix
+import numpy as np
 
 logging.basicConfig(level=logging.INFO)
 
@@ -407,20 +409,15 @@ create a class that preprocess the data for the models
 class DataPreProcess:
     
 ### preprocess the data for context based model ###
-    
-    #create user item matrix with rows user_id cols isbn and rating calues that calculate the mean rating
+
+    #create a function that get the dictionary parameters and return 
+    #split data that fit for svd als and knn models
     @staticmethod
-    def user_item_matrix(data_dict:Dict[str,pd.DataFrame]):
-        df = data_dict["Ratings"]
-        pivote_df = df.pivot_table(
-            index="user_id",
-            columns="isbn",
-            values="book_rating",
-            aggfunc="mean",
-            fill_value=0
-        )
-        logging.info("successfully created user item matrix")
-        return pivote_df
+    def user_based_data(data_dict:Dict[str,pd.DataFrame], test=0.2, random_s_size=42)->pd.DataFrame:
+        rating_df = data_dict["Rating"]
+        
+
+
 
 ### preprocess context based model ###
 
