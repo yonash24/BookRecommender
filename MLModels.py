@@ -13,6 +13,7 @@ from surprise import SVD, Dataset, Reader
 from surprise.model_selection import train_test_split
 from scipy.sparse import csr_matrix
 from implicit.als import AlternatingLeastSquares
+from typing import Any, Dict, Tuple
 
 logging.basicConfig(level=logging.INFO)
 
@@ -123,58 +124,100 @@ class TrainModel:
         logging.info("SVD model create and trained successfully")
         return model, train_set, testset
 
-   
     #create user based predictions
 
     #KNN prediction
     @staticmethod
-    def user_based_knn_prediction(user_id:int, model:NearestNeighbors, train_matrix:csr_matrix, k=5)->list:
-        user_index = train_matrix.index.get_loc(user_id)   #get the user_index in the user item matrix
-        user_vector = train_matrix.iloc[user_index].values.reshape(1,-1)
-        distances, indices = model.kneighbors(user_vector, n_neighbors=k+1)
-        logging.info("trained the model successfully")
-        logging.info(f"Found {k} nearest neighbors for user {user_id}.")
-        neighbor_indices = indices.flatten()[1:]
-        neighbor_rating = train_matrix.iloc[neighbor_indices]
-        recommendation_score = neighbor_rating.mean(axis=0)
-        user_rated_book = train_matrix.iloc[user_index]
-        recommendation_score = recommendation_score[user_rated_book == 0]
-        top_recommends = recommendation_score.sort_values(ascending=False).head(k)
+    def user_based_knn_prediction(user_id: int, model: NearestNeighbors, user_item_matrix: pd.DataFrame, train_matrix: csr_matrix, k=5) -> list:
+        user_index = user_item_matrix.index.get_loc(user_id)
+        user_vector = train_matrix[user_index]
+        distances, indices = model.kneighbors(user_vector, n_neighbors=k + 1)
+        neighbor_indices = indices.flatten()[1:]  
+        neighbor_ratings = user_item_matrix.iloc[neighbor_indices]
+        recommendation_scores = neighbor_ratings.mean(axis=0)
+        user_rated_books = user_item_matrix.iloc[user_index]
+        recommendation_scores = recommendation_scores[user_rated_books == 0]
+        top_recommends = recommendation_scores.sort_values(ascending=False).head(k)    
+        logging.info(f"Generated {k} recommendations for user {user_id} using KNN.")
         return list(top_recommends.items())
-
-        return distances, indices
 
     #ALS prediction
     @staticmethod
-    def user_based_als_prediction(user_id:int, model:AlternatingLeastSquares, train_matrix:csr_matrix, num_recommendation: int=5):
-        user_index = train_matrix.index.get_loc(user_id)
-        item_indices, scores = model.recommend(user_index, train_matrix, N=num_recommendation)
-        logging.info("ALS model created andtrained successfully")
+    def user_based_als_prediction(user_id: int, model: AlternatingLeastSquares, user_item_matrix: pd.DataFrame, train_matrix_T: csr_matrix, num_recommendation: int = 5) -> list:
+        user_index = user_item_matrix.index.get_loc(user_id)        
+        item_indices, scores = model.recommend(user_index, train_matrix_T, N=num_recommendation)  
         recommendations = []
-        for i, item_index in enumerate(item_indices):
-            isbn = train_matrix.columns[item_index]
-            score = scores[i]
+        for item_index, score in zip(item_indices, scores):
+            isbn = user_item_matrix.columns[item_index]
             recommendations.append((isbn, score))
-            logging.info(f"Book ISBN: {isbn}, Score: {score:.2f}")
+            
+        logging.info(f"Generated {num_recommendation} recommendations for user {user_id} using ALS.")
         return recommendations
 
     #SVD prediction
     @staticmethod
-    def user_based_svd_prediction(user_id:int, model:SVD, test_df:pd.DataFrame, num_recommendation = 5):
-        books_isbn = set(test_df["isbn"].unique())
-        rated_isbn = set(test_df[test_df["user_id"] == user_id]["isbn"].unique())
-        unrated_books = books_isbn - rated_isbn
-        prediction = []
+    def user_based_svd_prediction(user_id: int, model: SVD, train_df: pd.DataFrame, num_recommendation=5) -> list:
+        all_isbns = set(train_df['isbn'].unique())
+        rated_isbns = set(train_df[train_df['user_id'] == user_id]['isbn'].unique())
+        unrated_books = all_isbns - rated_isbns
+        predictions = []
         for isbn in unrated_books:
-                prediction_obj = model.predict(uid=user_id, iid=isbn)
-                prediction.append(prediction_obj)
-        logging.info("created svd prediction")
-        prediction.sort(key=lambda x: x.est, reverse=True)
-        return prediction[:10]
+            pred_obj = model.predict(uid=user_id, iid=isbn)
+            predictions.append((pred_obj.iid, pred_obj.est))
+        predictions.sort(key=lambda x: x[1], reverse=True)
+        
+        logging.info(f"Generated {num_recommendation} recommendations for user {user_id} using SVD.")
+        return predictions[:num_recommendation]
     
 
     ##creating evaluation for each user based model ##
+    def evaluate_model(model: Any, model_type: str,test_df: pd.DataFrame,user_item_matrix: pd.DataFrame, train_data: Any,k: int = 10) -> Dict[str, float]:
 
-    #knn evaluation
-    def knn_model_evaluation(user_is:int, model:BaseEstimator, test_matrix:csr_matrix):
-        pass
+        test_users = test_df['user_id'].unique()
+        precisions = []
+        recalls = []
+        
+        for user_id in test_users:
+            ground_truth_items = set(test_df[test_df['user_id'] == user_id]['isbn'])
+            if not ground_truth_items:
+                continue
+                
+            recommendations = []
+            if model_type == 'knn':
+                recommendations_with_scores = TrainModel.user_based_knn_prediction(
+                    user_id, model, user_item_matrix, train_data, k
+                )
+            elif model_type == 'als':
+                recommendations_with_scores = TrainModel.user_based_als_prediction(
+                    user_id, model, user_item_matrix, train_data, k
+                )
+            elif model_type == 'svd':
+                recommendations_with_scores = TrainModel.user_based_svd_prediction(
+                    user_id, model, train_data, k
+                )
+            
+            recommended_items = set([isbn for isbn, score in recommendations_with_scores])
+            hits = len(ground_truth_items.intersection(recommended_items))            
+            precision_at_k = hits / k if k > 0 else 0            
+            recall_at_k = hits / len(ground_truth_items) if ground_truth_items else 0
+            precisions.append(precision_at_k)
+            recalls.append(recall_at_k)
+            
+            average_precision = sum(precisions) / len(precisions) if precisions else 0
+            average_recall = sum(recalls) / len(recalls) if recalls else 0
+            
+            return {
+                'precision_at_k': average_precision,
+                'recall_at_k': average_recall
+            }
+
+    
+"""
+create class with functions to improve the models
+"""
+
+class ModelsImprovment:
+
+    ##improve context base models##
+
+    pass
