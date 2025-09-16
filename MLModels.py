@@ -92,10 +92,9 @@ class TrainModel:
 
     #KNN model
     @staticmethod
-    def knn_user_based_model(user_item_train_matrix: pd.DataFrame):
-        user_item_spare = csr_matrix(user_item_train_matrix)
+    def knn_user_based_model(train_matrix):
         model = NearestNeighbors(metric="cosine", algorithm="brute")
-        model.fit(user_item_spare)
+        model.fit(train_matrix)
         logging.info("successfully created user based model with KNN")
         
         return model
@@ -103,10 +102,9 @@ class TrainModel:
     
     #ALS model
     @staticmethod
-    def als_user_based_model(user_item_train_matrix:pd.DataFrame):
+    def als_user_based_model(train_matrix):
         model = AlternatingLeastSquares(factors=50, regularization=0.01, iterations=20)
-        user_item_sparse = csr_matrix(user_item_train_matrix.values)
-        model.fit(user_item_sparse.T)
+        model.fit(train_matrix.T)
         logging.info("ALS model creates and trained successfully")
         
         return model
@@ -128,18 +126,18 @@ class TrainModel:
    
     #create user based predictions
 
-    #KNN presiction
+    #KNN prediction
     @staticmethod
-    def user_based_knn_prediction(user_id:int, model:NearestNeighbors, user_item_matrix:pd.DataFrame, k=5)->list:
-        user_index = user_item_matrix.index.get_loc(user_id)   #get the user_index in the user item matrix
-        user_vector = user_item_matrix.iloc[user_index].values.reshape(1,-1)
+    def user_based_knn_prediction(user_id:int, model:NearestNeighbors, train_matrix:csr_matrix, k=5)->list:
+        user_index = train_matrix.index.get_loc(user_id)   #get the user_index in the user item matrix
+        user_vector = train_matrix.iloc[user_index].values.reshape(1,-1)
         distances, indices = model.kneighbors(user_vector, n_neighbors=k+1)
         logging.info("trained the model successfully")
         logging.info(f"Found {k} nearest neighbors for user {user_id}.")
         neighbor_indices = indices.flatten()[1:]
-        neighbor_rating = user_item_matrix.iloc[neighbor_indices]
+        neighbor_rating = train_matrix.iloc[neighbor_indices]
         recommendation_score = neighbor_rating.mean(axis=0)
-        user_rated_book = user_item_matrix.iloc[user_index]
+        user_rated_book = train_matrix.iloc[user_index]
         recommendation_score = recommendation_score[user_rated_book == 0]
         top_recommends = recommendation_score.sort_values(ascending=False).head(k)
         return list(top_recommends.items())
@@ -148,14 +146,13 @@ class TrainModel:
 
     #ALS prediction
     @staticmethod
-    def user_based_als_prediction(user_id:int, model:AlternatingLeastSquares, user_item_matrix:pd.DataFrame, num_recommendation: int=5):
-        user_index = user_item_matrix.index.get_loc(user_id)
-        user_item_spare = csr_matrix(user_item_matrix.values)
-        item_indices, scores = model.recommend(user_index, user_item_spare, N=num_recommendation)
+    def user_based_als_prediction(user_id:int, model:AlternatingLeastSquares, train_matrix:csr_matrix, num_recommendation: int=5):
+        user_index = train_matrix.index.get_loc(user_id)
+        item_indices, scores = model.recommend(user_index, train_matrix, N=num_recommendation)
         logging.info("ALS model created andtrained successfully")
         recommendations = []
         for i, item_index in enumerate(item_indices):
-            isbn = user_item_matrix.columns[item_index]
+            isbn = train_matrix.columns[item_index]
             score = scores[i]
             recommendations.append((isbn, score))
             logging.info(f"Book ISBN: {isbn}, Score: {score:.2f}")
@@ -176,3 +173,8 @@ class TrainModel:
         return prediction[:10]
     
 
+    ##creating evaluation for each user based model ##
+
+    #knn evaluation
+    def knn_model_evaluation(user_is:int, model:BaseEstimator, test_matrix:csr_matrix):
+        pass
