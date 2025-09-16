@@ -170,46 +170,70 @@ class TrainModel:
         return predictions[:num_recommendation]
     
 
-    ##creating evaluation for each user based model ##
-    def evaluate_model(model: Any, model_type: str,test_df: pd.DataFrame,user_item_matrix: pd.DataFrame, train_data: Any,k: int = 10) -> Dict[str, float]:
+def evaluate_model(
+    model: Any,
+    model_type: str,
+    test_df: pd.DataFrame,
+    user_item_matrix: pd.DataFrame,
+    train_data: Any,
+    k: int = 10
+) -> Dict[str, float]:
+    """
+    Computes Precision@k and Recall@k averaged over users appearing in test_df.
+    Assumes each model_*_prediction returns an Iterable[(isbn, score)] sorted by score desc.
+    """
 
-        test_users = test_df['user_id'].unique()
-        precisions = []
-        recalls = []
-        
-        for user_id in test_users:
-            ground_truth_items = set(test_df[test_df['user_id'] == user_id]['isbn'])
-            if not ground_truth_items:
-                continue
-                
-            recommendations = []
-            if model_type == 'knn':
-                recommendations_with_scores = TrainModel.user_based_knn_prediction(
-                    user_id, model, user_item_matrix, train_data, k
-                )
-            elif model_type == 'als':
-                recommendations_with_scores = TrainModel.user_based_als_prediction(
-                    user_id, model, user_item_matrix, train_data, k
-                )
-            elif model_type == 'svd':
-                recommendations_with_scores = TrainModel.user_based_svd_prediction(
-                    user_id, model, train_data, k
-                )
-            
-            recommended_items = set([isbn for isbn, score in recommendations_with_scores])
-            hits = len(ground_truth_items.intersection(recommended_items))            
-            precision_at_k = hits / k if k > 0 else 0            
-            recall_at_k = hits / len(ground_truth_items) if ground_truth_items else 0
-            precisions.append(precision_at_k)
-            recalls.append(recall_at_k)
-            
-            average_precision = sum(precisions) / len(precisions) if precisions else 0
-            average_recall = sum(recalls) / len(recalls) if recalls else 0
-            
-            return {
-                'precision_at_k': average_precision,
-                'recall_at_k': average_recall
-            }
+    def _predict(user_id: Any, k: int) -> List[Tuple[Any, float]]:
+        if model_type == 'knn':
+            return list(TrainModel.user_based_knn_prediction(user_id, model, user_item_matrix, train_data, k))
+        elif model_type == 'als':
+            return list(TrainModel.user_based_als_prediction(user_id, model, user_item_matrix, train_data, k))
+        elif model_type == 'svd':
+            return list(TrainModel.user_based_svd_prediction(user_id, model, train_data, k))
+        else:
+            raise ValueError(f"Unsupported model_type: {model_type}")
+
+    test_users = test_df['user_id'].unique()
+    precisions: List[float] = []
+    recalls: List[float] = []
+
+    for user_id in test_users:
+        # Ground truth: items the user actually interacted with in the test set
+        gt_items = set(test_df.loc[test_df['user_id'] == user_id, 'isbn'])
+        if len(gt_items) == 0:
+            # nothing to evaluate for this user
+            continue
+
+        try:
+            recs_with_scores = _predict(user_id, k)
+        except KeyError:
+            # e.g., cold-start user not in training data
+            continue
+
+        recommended_items = [isbn for isbn, _ in recs_with_scores]
+        if len(recommended_items) == 0:
+            continue
+
+        # Use top-k (truncate if more returned)
+        topk = recommended_items[:k]
+        hits = len(set(topk) & gt_items)
+
+        # If model returns fewer than k, use the actual number for precision denominator
+        denom_prec = max(1, min(k, len(topk)))
+        precision_at_k = hits / denom_prec
+        recall_at_k = hits / len(gt_items)
+
+        precisions.append(precision_at_k)
+        recalls.append(recall_at_k)
+
+    avg_precision = float(np.mean(precisions)) if len(precisions) > 0 else 0.0
+    avg_recall = float(np.mean(recalls)) if len(recalls) > 0 else 0.0
+
+    return {
+        'precision_at_k': avg_precision,
+        'recall_at_k': avg_recall,
+        'evaluated_users': len(precisions)  # handy sanity check
+    }
 
     
 """
