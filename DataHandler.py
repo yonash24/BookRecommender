@@ -458,10 +458,6 @@ class DataPreProcess:
             merged_df2 = pd.merge(merged_df1,book_df, on="isbn")
             logging.info("merged the 3 clean data frames in the data dictionary")
 
-            merged_df2["book_mean_rate"] = merged_df2.groupby("isbn")["book_rating"].transform("mean")
-            merged_df2["rating_count"] = merged_df2.groupby("isbn")["book_rating"].transform("count")
-            logging.info("added to the data rfame mean moovie rate and rating count")
-
             return merged_df2
         
         except Exception as e:

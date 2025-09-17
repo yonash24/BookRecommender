@@ -14,6 +14,8 @@ from surprise.model_selection import train_test_split
 from scipy.sparse import csr_matrix
 from implicit.als import AlternatingLeastSquares
 from typing import Any, Dict, Tuple
+from sklearn.model_selection import RandomizedSearchCV
+from sklearn.model_selection import GridSearchCV
 
 logging.basicConfig(level=logging.INFO)
 
@@ -125,7 +127,7 @@ class TrainModel:
         return model, train_set, testset
 
     #create user based predictions
-
+      
     #KNN prediction
     @staticmethod
     def user_based_knn_prediction(user_id: int, model: NearestNeighbors, user_item_matrix: pd.DataFrame, train_matrix: csr_matrix, k=5) -> list:
@@ -133,10 +135,11 @@ class TrainModel:
         user_vector = train_matrix[user_index]
         distances, indices = model.kneighbors(user_vector, n_neighbors=k + 1)
         neighbor_indices = indices.flatten()[1:]  
-        neighbor_ratings = user_item_matrix.iloc[neighbor_indices]
-        recommendation_scores = neighbor_ratings.mean(axis=0)
-        user_rated_books = user_item_matrix.iloc[user_index]
-        recommendation_scores = recommendation_scores[user_rated_books == 0]
+        neighbor_vectors = train_matrix[neighbor_indices]    
+        recommendation_scores_array = neighbor_vectors.mean(axis=0)    
+        recommendation_scores = pd.Series(recommendation_scores_array.A1, index=user_item_matrix.columns)
+        user_rated_books = user_item_matrix.iloc[user_index]    
+        recommendation_scores = recommendation_scores[user_rated_books == 0]    
         top_recommends = recommendation_scores.sort_values(ascending=False).head(k)    
         logging.info(f"Generated {k} recommendations for user {user_id} using KNN.")
         return list(top_recommends.items())
@@ -168,80 +171,109 @@ class TrainModel:
         
         logging.info(f"Generated {num_recommendation} recommendations for user {user_id} using SVD.")
         return predictions[:num_recommendation]
+
     
-
-def evaluate_model(
-    model: Any,
-    model_type: str,
-    test_df: pd.DataFrame,
-    user_item_matrix: pd.DataFrame,
-    train_data: Any,
-    k: int = 10
-) -> Dict[str, float]:
-    """
-    Computes Precision@k and Recall@k averaged over users appearing in test_df.
-    Assumes each model_*_prediction returns an Iterable[(isbn, score)] sorted by score desc.
-    """
-
-    def _predict(user_id: Any, k: int) -> List[Tuple[Any, float]]:
-        if model_type == 'knn':
-            return list(TrainModel.user_based_knn_prediction(user_id, model, user_item_matrix, train_data, k))
-        elif model_type == 'als':
-            return list(TrainModel.user_based_als_prediction(user_id, model, user_item_matrix, train_data, k))
-        elif model_type == 'svd':
-            return list(TrainModel.user_based_svd_prediction(user_id, model, train_data, k))
-        else:
-            raise ValueError(f"Unsupported model_type: {model_type}")
-
-    test_users = test_df['user_id'].unique()
-    precisions: List[float] = []
-    recalls: List[float] = []
-
-    for user_id in test_users:
-        # Ground truth: items the user actually interacted with in the test set
-        gt_items = set(test_df.loc[test_df['user_id'] == user_id, 'isbn'])
-        if len(gt_items) == 0:
-            # nothing to evaluate for this user
-            continue
-
-        try:
-            recs_with_scores = _predict(user_id, k)
-        except KeyError:
-            # e.g., cold-start user not in training data
-            continue
-
-        recommended_items = [isbn for isbn, _ in recs_with_scores]
-        if len(recommended_items) == 0:
-            continue
-
-        # Use top-k (truncate if more returned)
-        topk = recommended_items[:k]
-        hits = len(set(topk) & gt_items)
-
-        # If model returns fewer than k, use the actual number for precision denominator
-        denom_prec = max(1, min(k, len(topk)))
-        precision_at_k = hits / denom_prec
-        recall_at_k = hits / len(gt_items)
-
-        precisions.append(precision_at_k)
-        recalls.append(recall_at_k)
-
-    avg_precision = float(np.mean(precisions)) if len(precisions) > 0 else 0.0
-    avg_recall = float(np.mean(recalls)) if len(recalls) > 0 else 0.0
-
-    return {
-        'precision_at_k': avg_precision,
-        'recall_at_k': avg_recall,
-        'evaluated_users': len(precisions)  # handy sanity check
-    }
-
     
 """
 create class with functions to improve the models
 """
 
-class ModelsImprovment:
+class ModelsHyperparametersImprovment:
 
-    ##improve context base models##
+##improve context base models##
 
-    pass
+    # random forest regression hyperparameters improvement
+    @staticmethod
+    def context_based_radom_forest_hyperparameters_improvement( x_train: pd.DataFrame, y_train:pd.Series):
+        param_grid = {
+            "n_estimators":[100,200,300,400,500,600,700,800],
+            'max_depth': [10, 20, 30, None],
+            'min_samples_leaf': [1, 2, 4],
+            'min_samples_split': [2, 5, 10]
+        }
+        model = RandomForestRegressor(random_state=42)
+        randon_search = RandomizedSearchCV(estimator=model, param_distributions=param_grid, n_iter=8, 
+                                   cv=3, scoring='neg_mean_squared_error', verbose=2, random_state=42, n_jobs=-1)
+        randon_search.fit(x_train,y_train)
+        logging.info(f"the best n_estimator for the model is: {randon_search.best_params_}")
+        return randon_search.best_estimator_
+    
+    # extrem gradient boosting hyperparameters improvment
+    @staticmethod
+    def context_based_XBGgradient_boosting_hyperparameters_improvment( x_train:pd.DataFrame, y_train:pd.Series):
+        param_grid = {
+                "n_estimators": [100, 200, 300, 400, 500],
+                "learning_rate": [0.05, 0.1, 0.2],
+                "max_depth": [3, 5, 7],
+                "subsample": [0.7, 0.8, 0.9],
+                "colsample_bytree": [0.7, 0.8, 0.9]
+        }
+        model = XGBRegressor(random_state=42)
+        random_search_XGBoost = RandomizedSearchCV(estimator=model, param_distributions=param_grid, n_iter=20,
+                                                   cv=3, scoring="neg_mean_squared_error", verbose=2, random_state=42, n_jobs=-1)
+        random_search_XGBoost.fit(x_train, y_train)
+        logging.info(f"model trained successfully, best parameters {random_search_XGBoost.best_params_}")
+        return random_search_XGBoost.best_estimator_
+    
+    #light gradient boosting hyperparameters improvment
+    @staticmethod
+    def context_based_LGBgradient_boostin_hyperparameters_improvment(x_train:pd.DataFrame, y_train:pd.Series):
+        param_grid = {
+                "n_estimators": [100, 200, 300, 400, 500],
+                "learning_rate": [0.05, 0.1, 0.2],
+                "num_leaves": [20, 31, 40, 50],
+                "max_depth": [3, 5, 7],
+                "colsample_bytree": [0.7, 0.8, 0.9]
+        }
+        model = LGBMRegressor(random_state=42)
+        random_search_LBGoost = RandomizedSearchCV(estimator=model, param_distributions=param_grid, n_iter=20,
+                                                   cv=3, scoring="neg_mean_squared_error", verbose=2, random_state=42, n_jobs=-1)
+        random_search_LBGoost.fit(x_train, y_train)
+        logging.info(f"model trained successfully, best parameters {random_search_LBGoost.best_params_}")
+        return random_search_LBGoost.best_estimator_
+
+    ### user based models hyperparameters improvment ###
+
+    #knn hyperparameters improvment 
+    @staticmethod
+    def knn_user_based_hyperparameters_improvment(train_matrix, test_matrix):
+        param_to_check = [5,10,20,30,40]
+        best_rmse = float(int)
+        best_k = -1
+        
+        for k in param_to_check:
+            model = NearestNeighbors(metric="cosine", algorithm="brute", n_neighbors=k)
+            model.fit(train_matrix)
+            
+
+
+    #svd model hyperparameters improvment
+    @staticmethod
+    def svd_user_based_hyperparameters_improvment():
+        pass
+
+
+"""
+create a class for features engineering
+"""
+class FeaturesEngineer:
+
+    ### context based models feature engeneering ###
+
+    #get data frame from context_based_df 
+    #add to the data frame the rows: 
+    @staticmethod
+    def context_base_models_features_engineer(x_train:pd.DataFrame, x_test:pd.DataFrame, y_train:pd.DataFrame):
+        
+        book_mean_rate_map = x_train.groupby("isbn")["book_rating"].mean()
+        rating_count_map = x_train.groupby("isbn")["book_rating"].count()
+
+        x_train["book_mean_rate"] = x_train["isbn"].map(book_mean_rate_map)
+        x_test["book_mean_rate"] = x_test["isbn"].map(book_mean_rate_map)
+        logging.info("added the book mean rating to the train and test sets")
+
+        x_train["rating_count"] = x_train["isbn"].map(rating_count_map)
+        x_test["rating_count"] = x_test["isbn"].map(rating_count_map)
+        logging.info("added the rating count to the train and test sets")
+
+        
