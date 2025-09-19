@@ -263,17 +263,49 @@ class FeaturesEngineer:
     #get data frame from context_based_df 
     #add to the data frame the rows: 
     @staticmethod
-    def context_base_models_features_engineer(x_train:pd.DataFrame, x_test:pd.DataFrame, y_train:pd.DataFrame):
+    def context_base_models_features_engineer(x_train:pd.DataFrame, x_test:pd.DataFrame):
         
-        book_mean_rate_map = x_train.groupby("isbn")["book_rating"].mean()
+        book_rating_mean_map = x_train.groupby("isbn")["book_rating"].mean()
         rating_count_map = x_train.groupby("isbn")["book_rating"].count()
+        book_rating_var_map = x_train.groupby("isbn")["book_rating"].var()
+        writer_mean_rating_map = x_train.groupby("book_author")["book_rating"].mean()
+        writer_book_count_map = x_train.groupby("book_author")["isbn"].nunique()
+        user_mean_rate_map = x_train.groupby("user_id")["book_rating"].mean()
+        user_rating_count_map = x_train.groupby("user_id")["book_rating"].count()
 
-        x_train["book_mean_rate"] = x_train["isbn"].map(book_mean_rate_map)
-        x_test["book_mean_rate"] = x_test["isbn"].map(book_mean_rate_map)
+        x_train["book_mean_rate"] = x_train["isbn"].map(book_rating_mean_map)
+        x_test["book_mean_rate"] = x_test["isbn"].map(book_rating_mean_map)
         logging.info("added the book mean rating to the train and test sets")
 
         x_train["rating_count"] = x_train["isbn"].map(rating_count_map)
         x_test["rating_count"] = x_test["isbn"].map(rating_count_map)
+        logging.info("added the rating varient to the train and test sets")
+
+        x_train["book_age"] = 2025 - x_train["year_if_publication"]
+        x_test["book_age"] = 2025 - x_train["year_if_publication"]
+        logging.info("added the book age to the train and test sets")
+
+        x_train["book_rating_var"] = x_train["isbn"].map(book_rating_var_map)
+        x_test["book_rating_var"] = x_test["isbn"].map(book_rating_var_map)
+        logging.info("added the rating count to the train and test sets")
+        
+        x_train["writer_mean_rate"] = x_train["book_author"].map(writer_mean_rating_map)
+        x_test["writer_mean_rate"] = x_test["book_author"].map(writer_mean_rating_map)
         logging.info("added the rating count to the train and test sets")
 
-        
+        x_train["writer_book_count"] = x_train["book_author"].map(writer_book_count_map)
+        x_test["writer_book_count"] = x_test["book_author"].map(writer_book_count_map)
+        logging.info("added the writer book count to the train and test sets")
+
+        x_train["user_mean_rate"] = x_train["user_id"].map(user_mean_rate_map)
+        x_test["user_mean_rate"] = x_test["user_id"].map(user_mean_rate_map)
+        logging.info("added the user mean rate to the train and test sets")
+
+        x_train["user_rating_count"] = x_train["user_id"].map(user_rating_count_map)
+        x_test["user_rating_count"] = x_test["user_id"].map(user_rating_count_map)
+        logging.info("added the user rating count to the train and test sets")
+
+        x_train = x_train.fillna(0)
+        x_test = x_test.fillna(0)
+
+        return x_train, x_test
