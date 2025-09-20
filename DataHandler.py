@@ -485,6 +485,7 @@ class DataPreProcess:
         logging.info("drop unrelevant columns for the next step")
         return final_df
     
+
     #encode the data frame from context_based_df
     #col "location" woth one hot encoding
     #cols "publishers" and "author" with hashing encoding

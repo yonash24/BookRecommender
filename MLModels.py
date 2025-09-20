@@ -16,6 +16,8 @@ from implicit.als import AlternatingLeastSquares
 from typing import Any, Dict, Tuple
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import GridSearchCV
+from sklearn.preprocessing import StandardScaler
+
 
 logging.basicConfig(level=logging.INFO)
 
@@ -263,7 +265,7 @@ class FeaturesEngineer:
     #get data frame from context_based_df 
     #add to the data frame the rows: 
     @staticmethod
-    def context_base_models_features_engineer(x_train:pd.DataFrame, x_test:pd.DataFrame):
+    def context_base_models_features_engineer(x_train:pd.DataFrame, x_test:pd.DataFrame)->pd.DataFrame:
         
         book_rating_mean_map = x_train.groupby("isbn")["book_rating"].mean()
         rating_count_map = x_train.groupby("isbn")["book_rating"].count()
@@ -309,3 +311,19 @@ class FeaturesEngineer:
         x_test = x_test.fillna(0)
 
         return x_train, x_test
+
+    # data scale
+    @staticmethod
+    def context_based_models_df_standartization(x_train:pd.DataFrame, x_test:pd.DataFrame):
+        cols_to_standart = ["book_rating_mean", "rating_count", "book_rating_var", "writer_book_count", "writer_mean_rating", "user_mean_rate", "user_rating_count","book_age"]
+        scaler = StandardScaler()
+        scaler.fit(x_train[cols_to_standart])
+        logging.info("standart the new data frame columns")
+
+        x_train[cols_to_standart] = scaler.transform(x_train[cols_to_standart])
+        x_test[cols_to_standart] = scaler.transform(x_test[cols_to_standart])
+
+        return x_train, x_test
+    
+    
+
