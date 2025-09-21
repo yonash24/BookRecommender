@@ -17,6 +17,8 @@ from typing import Any, Dict, Tuple
 from sklearn.model_selection import RandomizedSearchCV
 from sklearn.model_selection import GridSearchCV
 from sklearn.preprocessing import StandardScaler
+from collections import defaultdict
+from surprise import accuracy
 
 
 logging.basicConfig(level=logging.INFO)
@@ -175,7 +177,143 @@ class TrainModel:
         return predictions[:num_recommendation]
 
     
-    
+    #create evaluation functions for the user based models
+
+    # Helper function to predict a single rating for KNN
+    @staticmethod
+    def _predict_knn_rating(user_idx, item_idx, model, train_matrix, k):
+        user_vector = train_matrix[user_idx]
+        _, indices = model.kneighbors(user_vector, n_neighbors=k + 1)
+        neighbor_indices = indices.flatten()[1:]
+        neighbor_ratings = train_matrix[neighbor_indices, item_idx].toarray().flatten()
+        valid_ratings = neighbor_ratings[neighbor_ratings > 0]
+        return np.mean(valid_ratings) if valid_ratings.size > 0 else train_matrix.data.mean()
+
+
+    #knn model evaluation
+    @staticmethod
+    def evaluate_knn_model(model, train_matrix, test_matrix, user_item_matrix, k=10, rating_threshold=8.0):
+        all_precisions, all_recalls = [], []
+        
+        for user_idx in range(test_matrix.shape[0]):
+            user_id = user_item_matrix.index[user_idx]
+            
+            relevant_items = set(user_item_matrix.columns[test_matrix[user_idx].indices[test_matrix[user_idx].data >= rating_threshold]])
+            if not relevant_items:
+                continue
+            
+            recs = TrainModel.user_based_knn_prediction(user_id, model, user_item_matrix, train_matrix, k=k)
+            recommended_items = {isbn for isbn, score in recs}
+            
+            hits = len(recommended_items.intersection(relevant_items))
+            all_precisions.append(hits / k)
+            all_recalls.append(hits / len(relevant_items))
+
+        avg_precision = np.mean(all_precisions) if all_precisions else 0
+        avg_recall = np.mean(all_recalls) if all_recalls else 0
+        
+        test_user_indices, test_item_indices = test_matrix.nonzero()
+        actual_ratings = test_matrix.data
+        predicted_ratings = [_predict_knn_rating(u, i, model, train_matrix, k) for u, i in zip(test_user_indices, test_item_indices)]
+            
+        mse = mean_squared_error(actual_ratings, predicted_ratings)
+        rmse = np.sqrt(mse)
+
+        logging.info(f"KNN Model Evaluation (k={k}):")
+        logging.info(f"  - RMSE: {rmse:.4f}")
+        logging.info(f"  - Average Precision: {avg_precision:.4f}")
+        logging.info(f"  - Average Recall: {avg_recall:.4f}")
+
+        return {"rmse": rmse, "precision": avg_precision, "recall": avg_recall}
+
+    #svd model evaluation
+    @staticmethod
+    def evaluate_svd_model(model: SVD, testset, k=10, rating_threshold=8.0):
+        predictions = model.test(testset)
+        rmse = accuracy.rmse(predictions, verbose=False)
+
+        user_predictions = defaultdict(list)
+        for uid, iid, true_r, est, _ in predictions:
+            user_predictions[uid].append((iid, est))
+
+        user_ground_truth = defaultdict(list)
+        for uid, iid, true_r in testset:
+            if true_r >= rating_threshold:
+                user_ground_truth[uid].append(iid)
+
+        all_precisions = dict()
+        all_recalls = dict()
+
+        for uid, user_preds in user_predictions.items():
+            if not user_ground_truth[uid]:
+                continue
+
+            user_preds.sort(key=lambda x: x[1], reverse=True)
+            recommended_items = {iid for (iid, est) in user_preds[:k]}
+            
+            ground_truth_items = set(user_ground_truth[uid])
+            hits = len(recommended_items.intersection(ground_truth_items))
+
+            all_precisions[uid] = hits / k
+            all_recalls[uid] = hits / len(ground_truth_items)
+
+        avg_precision = sum(prec for prec in all_precisions.values()) / len(all_precisions)
+        avg_recall = sum(rec for rec in all_recalls.values()) / len(all_recalls)
+
+        logging.info(f"SVD Model Evaluation (k={k}):")
+        logging.info(f"  - RMSE: {rmse:.4f}")
+        logging.info(f"  - Average Precision: {avg_precision:.4f}")
+        logging.info(f"  - Average Recall: {avg_recall:.4f}")
+
+        return {"rmse": rmse, "precision": avg_precision, "recall": avg_recall}
+
+    # Helper function to predict a single rating for ALS
+    @staticmethod
+    def _predict_als_rating(user_idx, item_idx, model):
+        user_vector = model.user_factors[user_idx]
+        item_vector = model.item_factors[item_idx]
+        return user_vector.dot(item_vector)
+
+    #als model evaluation     
+    @staticmethod
+    def evaluate_als_model(model, train_matrix_T, test_matrix, user_item_matrix, k=10, rating_threshold=8.0):
+        all_precisions, all_recalls = [], []
+
+        # --- 1. Calculate Precision and Recall @k ---
+        for user_idx in range(test_matrix.shape[0]):
+            user_id = user_item_matrix.index[user_idx]
+            relevant_items = set(user_item_matrix.columns[test_matrix[user_idx].indices[test_matrix[user_idx].data >= rating_threshold]])
+            if not relevant_items:
+                continue
+            
+            # Get Top-K recommendations using the ALS function
+            recs = TrainModel.user_based_als_prediction(user_id, model, user_item_matrix, train_matrix_T, num_recommendation=k)
+            recommended_items = {isbn for isbn, score in recs}
+
+            hits = len(recommended_items.intersection(relevant_items))
+            all_precisions.append(hits / k)
+            all_recalls.append(hits / len(relevant_items))
+
+        avg_precision = np.mean(all_precisions) if all_precisions else 0
+        avg_recall = np.mean(all_recalls) if all_recalls else 0
+        
+        # --- 2. Calculate RMSE ---
+        test_user_indices, test_item_indices = test_matrix.nonzero()
+        actual_ratings = test_matrix.data
+        predicted_ratings = [TrainModel._predict_als_rating(u, i, model) for u, i in zip(test_user_indices, test_item_indices)]
+            
+        mse = mean_squared_error(actual_ratings, predicted_ratings)
+        rmse = np.sqrt(mse)
+        
+        logging.info(f"ALS Model Evaluation (k={k}):")
+        logging.info(f"  - RMSE: {rmse:.4f}")
+        logging.info(f"  - Average Precision: {avg_precision:.4f}")
+        logging.info(f"  - Average Recall: {avg_recall:.4f}")
+        
+        return {"rmse": rmse, "precision": avg_precision, "recall": avg_recall}
+
+
+
 """
 create class with functions to improve the models
 """
@@ -239,13 +377,14 @@ class ModelsHyperparametersImprovment:
     #knn hyperparameters improvment 
     @staticmethod
     def knn_user_based_hyperparameters_improvment(train_matrix, test_matrix):
-        param_to_check = [5,10,20,30,40]
+        param_to_check = [5,10,20,30,40, 50]
         best_rmse = float(int)
         best_k = -1
         
         for k in param_to_check:
             model = NearestNeighbors(metric="cosine", algorithm="brute", n_neighbors=k)
             model.fit(train_matrix)
+            prediction = TrainModel.user_based_knn_prediction()
             
 
 
@@ -310,7 +449,11 @@ class FeaturesEngineer:
         x_train = x_train.fillna(0)
         x_test = x_test.fillna(0)
 
-        return x_train, x_test
+        cols_to_drop = ["user_id", "isbn", "book_title"]
+        final_x_train = x_train.drop(cols_to_drop, axis=1)
+        final_x_test = x_test.drop(cols_to_drop, axis=1)
+
+        return final_x_train, final_x_test
 
     # data scale
     @staticmethod

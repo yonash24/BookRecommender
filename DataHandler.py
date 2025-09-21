@@ -420,7 +420,7 @@ class DataPreProcess:
 
     #split the data for als knn models 
     @staticmethod
-    def user_based_data_als_knn(data_dict:Dict[str,pd.DataFrame],test_size=0.2, random_state=42):
+    def user_based_data_als_knn(data_dict:Dict[str,pd.DataFrame],test_size=0.2, random_state=42)->Tuple[csr_matrix,csr_matrix]:
         rating_df = data_dict["Ratings"]
 
         user_item_matrix = rating_df.pivot_table(
