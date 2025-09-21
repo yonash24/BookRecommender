@@ -1,4 +1,3 @@
-from DataHandler import DataPreProcess
 from sklearn.linear_model import LinearRegression
 import pandas as pd
 import logging
@@ -13,12 +12,17 @@ from surprise import SVD, Dataset, Reader
 from surprise.model_selection import train_test_split
 from scipy.sparse import csr_matrix
 from implicit.als import AlternatingLeastSquares
-from typing import Any, Dict, Tuple
 from sklearn.model_selection import RandomizedSearchCV
-from sklearn.model_selection import GridSearchCV
 from sklearn.preprocessing import StandardScaler
 from collections import defaultdict
 from surprise import accuracy
+from surprise.model_selection import GridSearchCV as SurpriseGridSearch
+from surprise import KNNBasic
+from surprise.model_selection import train_test_split as surprise_split
+from implicit.evaluation import train_test_split as implicit_split
+from implicit.evaluation import precision_at_k
+import itertools
+
 
 
 logging.basicConfig(level=logging.INFO)
@@ -214,7 +218,7 @@ class TrainModel:
         
         test_user_indices, test_item_indices = test_matrix.nonzero()
         actual_ratings = test_matrix.data
-        predicted_ratings = [_predict_knn_rating(u, i, model, train_matrix, k) for u, i in zip(test_user_indices, test_item_indices)]
+        predicted_ratings = [TrainModel._predict_knn_rating(u, i, model, train_matrix, k) for u, i in zip(test_user_indices, test_item_indices)]
             
         mse = mean_squared_error(actual_ratings, predicted_ratings)
         rmse = np.sqrt(mse)
@@ -376,97 +380,98 @@ class ModelsHyperparametersImprovment:
 
     #knn hyperparameters improvment 
     @staticmethod
-    def knn_user_based_hyperparameters_improvment(train_matrix, test_matrix):
-        param_to_check = [5,10,20,30,40, 50]
-        best_rmse = float(int)
-        best_k = -1
+    def tune_knn_model(data):
+        """
+        Finds the best 'k' for a KNN model by iterating and checking RMSE.
+        'data' is the full dataset loaded by the surprise Reader.
+        """
+        trainset, testset = surprise_split(data, test_size=0.2)
         
-        for k in param_to_check:
-            model = NearestNeighbors(metric="cosine", algorithm="brute", n_neighbors=k)
-            model.fit(train_matrix)
-            prediction = TrainModel.user_based_knn_prediction()
-            
-
+        k_values = [10, 20, 30, 40, 50]
+        rmse_results = {}
+        
+        for k in k_values:
+            model = KNNBasic(k=k, sim_options={'user_based': True}, verbose=False)
+            model.fit(trainset)
+            predictions = model.test(testset)
+            rmse = accuracy.rmse(predictions, verbose=False)
+            rmse_results[k] = rmse
+        
+        best_k = min(rmse_results, key=rmse_results.get)
+        logging.info(f"Best k found: {best_k} with RMSE: {rmse_results[best_k]:.4f}")
+        
+        # Create and retrain the final model with the best k on all data
+        final_model = KNNBasic(k=best_k, sim_options={'user_based': True})
+        final_model.fit(data.build_full_trainset())
+        return final_model
 
     #svd model hyperparameters improvment
     @staticmethod
-    def svd_user_based_hyperparameters_improvment():
-        pass
+    def tune_svd_model(data):
+        param_grid = {
+            'n_factors': [50, 100, 150],
+            'n_epochs': [20, 30],
+            'lr_all': [0.005, 0.01],
+            'reg_all': [0.02, 0.1]
+        }
+        
+        gs = SurpriseGridSearch(SVD, param_grid, measures=['rmse'], cv=3)
+        gs.fit(data)
+        
+        best_params = gs.best_params['rmse']
+        logging.info(f"Best SVD RMSE score: {gs.best_score['rmse']:.4f}")
+        logging.info(f"Best SVD parameters: {best_params}")
+        
+        # Create and retrain the final model with the best parameters
+        final_model = SVD(**best_params)
+        final_model.fit(data.build_full_trainset())
+        return final_model
 
+    #als tuning model
+    @staticmethod
+    @staticmethod
+    def tune_als_model(train_matrix):
+        # Split data for validation
+        train, validate = implicit_split(train_matrix, split_count=2, split_by='user')
+        
+        param_grid = {
+            'factors': [30, 50, 80],
+            'regularization': [0.01, 0.1],
+            'iterations': [15, 20]
+        }
+        
+        best_score = -1
+        best_params = {}
+        
+        # Generate all combinations of parameters
+        all_params = [dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())]
+
+        for params in all_params:
+            model = AlternatingLeastSquares(**params)
+            model.fit(train.T)
+            
+            # Evaluate using Precision@10
+            score = precision_at_k(model, train_user_items=train, test_user_items=validate, K=10)
+            
+            if score > best_score:
+                best_score = score
+                best_params = params
+
+        logging.info(f"Best ALS Precision@10: {best_score:.4f}")
+        logging.info(f"Best ALS parameters: {best_params}")
+
+        # Create and retrain the final model on all data
+        final_model = AlternatingLeastSquares(**best_params)
+        final_model.fit(train_matrix.T)
+        return final_model
 
 """
-create a class for features engineering
+create a class to orgenize and compare the models 
+and pick up the best out of them train him and build 
+a pipeline to the main with him
 """
-class FeaturesEngineer:
 
-    ### context based models feature engeneering ###
+class ModelOrganaize:
+    pass
 
-    #get data frame from context_based_df 
-    #add to the data frame the rows: 
-    @staticmethod
-    def context_base_models_features_engineer(x_train:pd.DataFrame, x_test:pd.DataFrame)->pd.DataFrame:
-        
-        book_rating_mean_map = x_train.groupby("isbn")["book_rating"].mean()
-        rating_count_map = x_train.groupby("isbn")["book_rating"].count()
-        book_rating_var_map = x_train.groupby("isbn")["book_rating"].var()
-        writer_mean_rating_map = x_train.groupby("book_author")["book_rating"].mean()
-        writer_book_count_map = x_train.groupby("book_author")["isbn"].nunique()
-        user_mean_rate_map = x_train.groupby("user_id")["book_rating"].mean()
-        user_rating_count_map = x_train.groupby("user_id")["book_rating"].count()
-
-        x_train["book_mean_rate"] = x_train["isbn"].map(book_rating_mean_map)
-        x_test["book_mean_rate"] = x_test["isbn"].map(book_rating_mean_map)
-        logging.info("added the book mean rating to the train and test sets")
-
-        x_train["rating_count"] = x_train["isbn"].map(rating_count_map)
-        x_test["rating_count"] = x_test["isbn"].map(rating_count_map)
-        logging.info("added the rating varient to the train and test sets")
-
-        x_train["book_age"] = 2025 - x_train["year_if_publication"]
-        x_test["book_age"] = 2025 - x_train["year_if_publication"]
-        logging.info("added the book age to the train and test sets")
-
-        x_train["book_rating_var"] = x_train["isbn"].map(book_rating_var_map)
-        x_test["book_rating_var"] = x_test["isbn"].map(book_rating_var_map)
-        logging.info("added the rating count to the train and test sets")
-        
-        x_train["writer_mean_rate"] = x_train["book_author"].map(writer_mean_rating_map)
-        x_test["writer_mean_rate"] = x_test["book_author"].map(writer_mean_rating_map)
-        logging.info("added the rating count to the train and test sets")
-
-        x_train["writer_book_count"] = x_train["book_author"].map(writer_book_count_map)
-        x_test["writer_book_count"] = x_test["book_author"].map(writer_book_count_map)
-        logging.info("added the writer book count to the train and test sets")
-
-        x_train["user_mean_rate"] = x_train["user_id"].map(user_mean_rate_map)
-        x_test["user_mean_rate"] = x_test["user_id"].map(user_mean_rate_map)
-        logging.info("added the user mean rate to the train and test sets")
-
-        x_train["user_rating_count"] = x_train["user_id"].map(user_rating_count_map)
-        x_test["user_rating_count"] = x_test["user_id"].map(user_rating_count_map)
-        logging.info("added the user rating count to the train and test sets")
-
-        x_train = x_train.fillna(0)
-        x_test = x_test.fillna(0)
-
-        cols_to_drop = ["user_id", "isbn", "book_title"]
-        final_x_train = x_train.drop(cols_to_drop, axis=1)
-        final_x_test = x_test.drop(cols_to_drop, axis=1)
-
-        return final_x_train, final_x_test
-
-    # data scale
-    @staticmethod
-    def context_based_models_df_standartization(x_train:pd.DataFrame, x_test:pd.DataFrame):
-        cols_to_standart = ["book_rating_mean", "rating_count", "book_rating_var", "writer_book_count", "writer_mean_rating", "user_mean_rate", "user_rating_count","book_age"]
-        scaler = StandardScaler()
-        scaler.fit(x_train[cols_to_standart])
-        logging.info("standart the new data frame columns")
-
-        x_train[cols_to_standart] = scaler.transform(x_train[cols_to_standart])
-        x_test[cols_to_standart] = scaler.transform(x_test[cols_to_standart])
-
-        return x_train, x_test
-    
-    
 
