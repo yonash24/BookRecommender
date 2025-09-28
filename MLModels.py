@@ -22,6 +22,7 @@ from surprise.model_selection import train_test_split as surprise_split
 from implicit.evaluation import train_test_split as implicit_split
 from implicit.evaluation import precision_at_k
 import itertools
+import joblib
 
 
 
@@ -273,7 +274,7 @@ class TrainModel:
 
     # Helper function to predict a single rating for ALS
     @staticmethod
-    def _predict_als_rating(user_idx, item_idx, model):
+    def predict_als_rating(user_idx, item_idx, model):
         user_vector = model.user_factors[user_idx]
         item_vector = model.item_factors[item_idx]
         return user_vector.dot(item_vector)
@@ -429,7 +430,6 @@ class ModelsHyperparametersImprovment:
 
     #als tuning model
     @staticmethod
-    @staticmethod
     def tune_als_model(train_matrix):
         # Split data for validation
         train, validate = implicit_split(train_matrix, split_count=2, split_by='user')
@@ -472,6 +472,38 @@ a pipeline to the main with him
 """
 
 class ModelOrganaize:
-    pass
+    
+    #regression models comparison
+    @staticmethod
+    def compare_regression_model(linear_regression:BaseEstimator, random_tree_regression:BaseEstimator, extrem_gradient_boosting:BaseEstimator, light_gradient_boosting:BaseEstimator,
+                                x_train:pd.DataFrame, x_test:pd.Series, y_train:pd.DataFrame, y_test:pd.Series):
 
+        min_mse = 10
+        min_rmse = 10
+        min_r2 = 0
 
+        linear_regression_train = TrainModel.context_based_linear_regression_model(x_train, x_test, y_train)
+        random_tree_regression_train = TrainModel.context_based_radom_tree_regression(x_train, x_test, y_train)
+        extrem_gradient_boosting_train = TrainModel.XBG_gradient_boosting_model(x_train, x_test, y_train)
+        light_gradient_boosting_train = TrainModel.Light_gradient_boosting_model(x_train, x_test, y_train)
+
+        linear_regression_model = linear_regression_train[0]
+        linear_regression_prediction = linear_regression_train[1]
+
+        random_tree_regression_model = random_tree_regression_train[0]
+        random_tree_regression_prediction = random_tree_regression_train[1]
+
+        extrem_gradient_boosting_model = extrem_gradient_boosting_train[0]
+        extrem_gradient_boosting_prediction = extrem_gradient_boosting_train[1]
+
+        light_gradient_boosting_model = light_gradient_boosting_train[0]
+        light_gradient_boosting_prediction = light_gradient_boosting_train[1]
+
+        comparation = {
+            "linear_regression" : TrainModel.context_based_models_evaluetion(linear_regression_prediction, y_test),
+            "random_tree_regression" : TrainModel.context_based_models_evaluetion(random_tree_regression_prediction, y_test),
+            "extrem_gradient_boosting" : TrainModel.context_based_models_evaluetion(extrem_gradient_boosting_prediction, y_test),
+            "light_gradient_boosting" : TrainModel.context_based_models_evaluetion(light_gradient_boosting_prediction, y_test)
+        }
+
+    
