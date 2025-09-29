@@ -476,28 +476,24 @@ class ModelOrganaize:
     #regression models comparison
     @staticmethod
     def compare_regression_model(linear_regression:BaseEstimator, random_tree_regression:BaseEstimator, extrem_gradient_boosting:BaseEstimator, light_gradient_boosting:BaseEstimator,
-                                x_train:pd.DataFrame, x_test:pd.Series, y_train:pd.DataFrame, y_test:pd.Series):
+                                y_test:pd.Series):
 
-        min_mse = 10
-        min_rmse = 10
-        min_r2 = 0
+        min_mse = float('inf')
+        min_rmse = float('inf')
+        mse_best_model = ''
+        rmse_best_model = ''
 
-        linear_regression_train = TrainModel.context_based_linear_regression_model(x_train, x_test, y_train)
-        random_tree_regression_train = TrainModel.context_based_radom_tree_regression(x_train, x_test, y_train)
-        extrem_gradient_boosting_train = TrainModel.XBG_gradient_boosting_model(x_train, x_test, y_train)
-        light_gradient_boosting_train = TrainModel.Light_gradient_boosting_model(x_train, x_test, y_train)
+        linear_regression_model = linear_regression[0]
+        linear_regression_prediction = linear_regression[1]
 
-        linear_regression_model = linear_regression_train[0]
-        linear_regression_prediction = linear_regression_train[1]
+        random_tree_regression_model = random_tree_regression[0]
+        random_tree_regression_prediction = random_tree_regression[1]
 
-        random_tree_regression_model = random_tree_regression_train[0]
-        random_tree_regression_prediction = random_tree_regression_train[1]
+        extrem_gradient_boosting_model = extrem_gradient_boosting[0]
+        extrem_gradient_boosting_prediction = extrem_gradient_boosting[1]
 
-        extrem_gradient_boosting_model = extrem_gradient_boosting_train[0]
-        extrem_gradient_boosting_prediction = extrem_gradient_boosting_train[1]
-
-        light_gradient_boosting_model = light_gradient_boosting_train[0]
-        light_gradient_boosting_prediction = light_gradient_boosting_train[1]
+        light_gradient_boosting_model = light_gradient_boosting[0]
+        light_gradient_boosting_prediction = light_gradient_boosting[1]
 
         comparation = {
             "linear_regression" : TrainModel.context_based_models_evaluetion(linear_regression_prediction, y_test),
@@ -506,4 +502,111 @@ class ModelOrganaize:
             "light_gradient_boosting" : TrainModel.context_based_models_evaluetion(light_gradient_boosting_prediction, y_test)
         }
 
+        for model, eval in comparation.items():
+            for eval_type, evaluation in eval.items():
+                if eval_type == "mse":
+                    if evaluation < min_mse:
+                        min_mse = evaluation
+                        mse_best_model = model
+                elif eval_type == "rmse":
+                    if evaluation < min_rmse:
+                        min_rmse = evaluation
+                        rmse_best_model = model
+                
+        logging.info(f"the best mse modle is: {mse_best_model}, and the best rmse model is {rmse_best_model}")
+        if rmse_best_model == "linear_regression":
+            joblib.dump(linear_regression_model,"linear_regression_model")
+            logging.info(f"saved model {rmse_best_model}")
+            return linear_regression
+        elif rmse_best_model == "random_tree_regression":
+            joblib.dump(random_tree_regression_model, "random_tree_regression_model")  
+            logging.info(f"saved model {rmse_best_model}")
+            return random_tree_regression
+        elif rmse_best_model == "extrem_gradient_boosting":
+            joblib.dump(extrem_gradient_boosting_model ,"extrem_gradient_boosting_model")
+            logging.info(f"saved model {rmse_best_model}")
+            return extrem_gradient_boosting
+        elif rmse_best_model == "light_gradient_boosting":
+            joblib.dump(light_gradient_boosting_model, "light_gradient_boosting_model")
+            logging.info(f"saved model {rmse_best_model}")
+            return light_gradient_boosting
+        
     
+    #user based model comparison
+    @staticmethod
+    def compare_user_based_models(ratings_df: pd.DataFrame, train_matrix: csr_matrix, test_matrix: csr_matrix, user_item_matrix: pd.DataFrame, k: int = 10):
+        """
+        Trains, evaluates, and compares user-based models (KNN, SVD, ALS),
+        saves the best one based on Precision@k, and returns it.
+
+        Args:
+            ratings_df (pd.DataFrame): The full ratings dataframe for SVD.
+            train_matrix (csr_matrix): The training user-item sparse matrix for KNN/ALS.
+            test_matrix (csr_matrix): The testing user-item sparse matrix for KNN/ALS.
+            user_item_matrix (pd.DataFrame): The full user-item matrix (with indices) for context.
+            k (int): The number of recommendations to consider for precision/recall.
+
+        Returns:
+            The best performing trained model object.
+        """
+        logging.info("--- Starting User-Based Model Comparison ---")
+
+        # 1. Train all three models
+        logging.info("Training KNN model...")
+        knn_model = TrainModel.knn_user_based_model(train_matrix)
+
+        logging.info("Training SVD model...")
+        svd_model, _, svd_testset = TrainModel.svd_user_based_model(ratings_df)
+
+        logging.info("Training ALS model...")
+        als_model = TrainModel.als_user_based_model(train_matrix)
+
+        # 2. Evaluate all three models
+        logging.info("\n--- Evaluating Models ---")
+        knn_scores = TrainModel.evaluate_knn_model(knn_model, train_matrix, test_matrix, user_item_matrix, k=k)
+        svd_scores = TrainModel.evaluate_svd_model(svd_model, svd_testset, k=k)
+        als_scores = TrainModel.evaluate_als_model(als_model, train_matrix.T, test_matrix, user_item_matrix, k=k)
+
+        # 3. Store models and their evaluation results
+        trained_models = {
+            "KNN": knn_model,
+            "SVD": svd_model,
+            "ALS": als_model
+        }
+        
+        evaluation_results = {
+            "KNN": knn_scores,
+            "SVD": svd_scores,
+            "ALS": als_scores
+        }
+
+        # 4. Compare models based on Precision@k to find the best one
+        best_precision = -1.0
+        best_model_name = None
+
+        logging.info("\n--- Model Performance Summary ---")
+        for name, scores in evaluation_results.items():
+            precision = scores.get('precision', 0)
+            recall = scores.get('recall', 0)
+            rmse = scores.get('rmse', float('inf'))
+            logging.info(f"Model: {name:<10} | Precision@{k}: {precision:.4f} | Recall@{k}: {recall:.4f} | RMSE: {rmse:.4f}")
+            
+            if precision > best_precision:
+                best_precision = precision
+                best_model_name = name
+
+        # 5. Save the best model and return it
+        if best_model_name:
+            best_model_object = trained_models[best_model_name]
+            filename = f"best_user_based_{best_model_name}_model.joblib"
+            joblib.dump(best_model_object, filename)
+            
+            logging.info(f"\nBest user-based model is '{best_model_name}' with a Precision@{k} of {best_precision:.4f}.")
+            logging.info(f"Model saved successfully as '{filename}'")
+            return best_model_object
+        else:
+            logging.warning("Could not determine the best user-based model.")
+            return None
+
+class HybideRecommender:
+    pass
