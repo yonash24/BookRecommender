@@ -192,7 +192,7 @@ class GetDataInfo:
 ### Popularity & Quality Insights
 
     #get the most popular books
-    def highest_raters_location(data_dict:Dict[str,pd.DataFrame]):
+    def highest_raters_books(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Ratings"]
         rates_df = df["isbn"].value_counts().head(20)
         rates_df.plot(kind="bar",color="skyblue", edgecolor="black")
@@ -206,7 +206,7 @@ class GetDataInfo:
 
     #see the top 20 rated books by mean rate for each book
     @staticmethod
-    def book_mean_rate(data_dict:Dict[str,pd.DataFrame]):
+    def top_20_rated_books(data_dict:Dict[str,pd.DataFrame]):
         df = data_dict["Ratings"]
         plot_df = df.groupby("isbn")["book_rating"].mean()
         top_books = plot_df.sort_values(ascending=False).head(20)
@@ -518,6 +518,15 @@ class DataPreProcess:
         final_data = DataPreProcess.split_data(initial_splitting)
         return final_data
 
+### hybrid model preprocessing ###
+    
+    #create pipeline for hybrid model preprocessing data
+    @staticmethod
+    def hybride_model_sample(df:pd.DataFrame):
+        filter_df = DataPreProcess.filter_df(df)
+        encoding_df = DataPreProcess.context_based_encoding(filter_df)
+        return encoding_df
+
 ### general preprocessing functions for all the data that need to be preprocessed ###
 
     #split data into train and test 
@@ -563,8 +572,8 @@ class FeaturesEngineer:
         x_test["rating_count"] = x_test["isbn"].map(rating_count_map)
         logging.info("added the rating varient to the train and test sets")
 
-        x_train["book_age"] = 2025 - x_train["year_if_publication"]
-        x_test["book_age"] = 2025 - x_train["year_if_publication"]
+        x_train["book_age"] = 2025 - x_train["year_of_publication"]
+        x_test["book_age"] = 2025 - x_train["year_of_publication"]
         logging.info("added the book age to the train and test sets")
 
         x_train["book_rating_var"] = x_train["isbn"].map(book_rating_var_map)
@@ -610,4 +619,45 @@ class FeaturesEngineer:
         return x_train, x_test
     
     
+    #create feature engineering for the hybrid model
+    @staticmethod
+    def hybrid_models_features_engineer(df:pd.DataFrame)->pd.DataFrame:
+        
+        book_rating_mean_map = df.groupby("isbn")["book_rating"].mean()
+        rating_count_map = df.groupby("isbn")["book_rating"].count()
+        book_rating_var_map = df.groupby("isbn")["book_rating"].var()
+        writer_mean_rating_map = df.groupby("book_author")["book_rating"].mean()
+        writer_book_count_map = df.groupby("book_author")["isbn"].nunique()
+        user_mean_rate_map = df.groupby("user_id")["book_rating"].mean()
+        user_rating_count_map = df.groupby("user_id")["book_rating"].count()
 
+        df["book_mean_rate"] = df["isbn"].map(book_rating_mean_map)
+        logging.info("added the book mean rating to the train and test sets")
+
+        df["rating_count"] = df["isbn"].map(rating_count_map)
+        logging.info("added the rating varient to the train and test sets")
+
+        df["book_age"] = 2025 - df["year_of_publication"]
+        logging.info("added the book age to the train and test sets")
+
+        df["book_rating_var"] = df["isbn"].map(book_rating_var_map)
+        logging.info("added the rating count to the train and test sets")
+        
+        df["writer_mean_rate"] = df["book_author"].map(writer_mean_rating_map)
+        logging.info("added the rating count to the train and test sets")
+
+        df["writer_book_count"] = df["book_author"].map(writer_book_count_map)
+        logging.info("added the writer book count to the train and test sets")
+
+        df["user_mean_rate"] = df["user_id"].map(user_mean_rate_map)
+        logging.info("added the user mean rate to the train and test sets")
+
+        df["user_rating_count"] = df["user_id"].map(user_rating_count_map)
+        logging.info("added the user rating count to the train and test sets")
+
+        df = df.fillna(0)
+
+        cols_to_drop = ["user_id", "isbn", "book_title"]
+        final_x_train = df.drop(cols_to_drop, axis=1)
+
+        return final_x_train
