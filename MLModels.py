@@ -23,7 +23,8 @@ from implicit.evaluation import train_test_split as implicit_split
 from implicit.evaluation import precision_at_k
 import itertools
 import joblib
-
+from typing import Tuple
+from DataHandler import DataPreProcess, FeaturesEngineer
 
 
 logging.basicConfig(level=logging.INFO)
@@ -608,5 +609,90 @@ class ModelOrganaize:
             logging.warning("Could not determine the best user-based model.")
             return None
 
-class HybideRecommender:
-    pass
+
+"""
+building  a hybride class that combained both the context based model
+and the user based models. by giving more weight to each model by
+the amount of rating that a user have
+"""
+class HybridRecommender:
+
+    """
+    building a constructor to the class
+    get all the required parameters for the models 
+    use to handle the recommends functions of the class 
+    """
+    #get the data frame from context_base_df in DataHandler
+    def __init__(self, context_based_model_and_prediction:Tuple[BaseEstimator,np.array], user_based_model:BaseEstimator,
+                  user_item_matrix:csr_matrix, train_df:pd.DataFrame, test_df:BaseEstimator, data_df:pd.DataFrame, user_id:int, isbn:int):
+        self.context_based_model = context_based_model_and_prediction[0]
+        self.context_based_prediction = context_based_model_and_prediction[1]
+        self.user_based_model = user_based_model
+        self.user_item_matrix = user_item_matrix
+        self.train_df = train_df
+        self.test_df = test_df
+        self.data_df = data_df
+        self.user_id = user_id
+        self.isbn = isbn
+
+    #helper function that calaulat the weight for user/book by rating
+    def custom_growth_curved(x, midpoint=10, steepness=0.3):
+        def shifted_sigmoid(val):
+            return 1/(1+np.exp(-steepness * (val - midpoint)))
+        
+        y_offset = shifted_sigmoid(0)        
+        value = shifted_sigmoid(x)        
+        final_value = (value - y_offset) / (1 - y_offset)        
+
+        return np.clip(final_value, 0, 1)
+
+    #helper function create a recommendation of the top 300 book that fit to the user by context base model
+    def book_sample_recommmend(self)->pd.DataFrame:
+        user_books_df = self.data_df[self.data_df["user_id"] == self.user_id]["isbn"].unique()    
+        all_books = self.data_df["isbn"].unique()
+        unread_books = np.setdiff1d(all_books, user_books_df)
+        filtered_df = self.data_df[self.data_df["isbn"].isin(unread_books)]
+        preprocess_df = DataPreProcess.hybride_model_sample(filtered_df)
+        prediction_df = FeaturesEngineer.hybrid_models_features_engineer(preprocess_df)
+
+        prediction = self.context_based_model.predict(prediction_df)
+        prediction_df["prediction"] = prediction
+        final_df = prediction_df.sort_values("prediction", ascending=False).head(300)
+
+        return final_df
+
+    #helper function get the data frame from  book_sample_recommmend and return the original data frame with the 300
+    #books with user id and isbn
+    def get_data_frame(self, df:pd.DataFrame)->pd.DataFrame:
+        books = df["isbn"].unique()
+        filtered_df = self.data_df[self.data_df["isbn"].isin(books)]
+        return filtered_df
+
+    #get how much weight you need to give to each model in the evaluation
+    #get data frame from get_data_frame
+    def weight_per_model(self, df:pd.DataFrame):
+        user_rating = len(self.data_df[self.data_df["user_id"] == self.user_id])
+        user_estimate = HybridRecommender.custom_growth_curved(user_rating)
+
+        book_rating = df.groupby("isbn")["book_rating"].count()
+        book_df = book_rating.to_frame()
+        book_df["estimate"] = book_rating.apply(HybridRecommender.custom_growth_curved)
+        book_df["final_estimate"] = book_df["estimate"] * user_estimate
+
+        return book_df
+
+        
+    #create recommendation by using hybrid model
+    #get a data frame from get_data_frame of the 300 books
+    def recommend(self, df:pd.DataFrame):
+        context_based_prediction = self.context_based_model.predict(df)
+        
+        if isinstance(self.user_based_model,KNeighborsRegressor):
+            pass
+        elif isinstance(self.user_based_model,SVD):
+            pass
+        else: #its als
+            pass
+            
+        
+        
