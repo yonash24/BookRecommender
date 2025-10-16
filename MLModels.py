@@ -140,7 +140,7 @@ class TrainModel:
       
     #KNN prediction
     @staticmethod
-    def user_based_knn_prediction(user_id: int, model: NearestNeighbors, user_item_matrix: pd.DataFrame, train_matrix: csr_matrix, k=5) -> list:
+    def user_based_knn_prediction(user_id: int, model: NearestNeighbors, user_item_matrix: pd.DataFrame, train_matrix: csr_matrix, k=5) -> pd.Series:
         user_index = user_item_matrix.index.get_loc(user_id)
         user_vector = train_matrix[user_index]
         distances, indices = model.kneighbors(user_vector, n_neighbors=k + 1)
@@ -150,37 +150,42 @@ class TrainModel:
         recommendation_scores = pd.Series(recommendation_scores_array.A1, index=user_item_matrix.columns)
         user_rated_books = user_item_matrix.iloc[user_index]    
         recommendation_scores = recommendation_scores[user_rated_books == 0]    
-        top_recommends = recommendation_scores.sort_values(ascending=False).head(k)    
+        top_recommends = recommendation_scores.sort_values(ascending=False)    
         logging.info(f"Generated {k} recommendations for user {user_id} using KNN.")
-        return list(top_recommends.items())
+        return top_recommends
 
     #ALS prediction
     @staticmethod
-    def user_based_als_prediction(user_id: int, model: AlternatingLeastSquares, user_item_matrix: pd.DataFrame, train_matrix_T: csr_matrix, num_recommendation: int = 5) -> list:
+    def user_based_als_prediction(user_id: int, model: AlternatingLeastSquares, user_item_matrix: pd.DataFrame, train_matrix_T: csr_matrix) -> pd.Series:
+        num_items = train_matrix_T.shape[1]
         user_index = user_item_matrix.index.get_loc(user_id)        
-        item_indices, scores = model.recommend(user_index, train_matrix_T, N=num_recommendation)  
-        recommendations = []
-        for item_index, score in zip(item_indices, scores):
-            isbn = user_item_matrix.columns[item_index]
-            recommendations.append((isbn, score))
+        item_indices, scores = model.recommend(user_index, train_matrix_T, N=num_items) 
+        isbns = user_item_matrix.columns[item_indices]
+        
+        all_recommendations = pd.Series(scores, index=isbns)
             
-        logging.info(f"Generated {num_recommendation} recommendations for user {user_id} using ALS.")
-        return recommendations
+        logging.info(f"Generated {num_items} recommendations for user {user_id} using ALS.")
+        return all_recommendations
 
     #SVD prediction
     @staticmethod
-    def user_based_svd_prediction(user_id: int, model: SVD, train_df: pd.DataFrame, num_recommendation=5) -> list:
+    def user_based_svd_prediction(user_id: int, model: SVD, train_df: pd.DataFrame) -> pd.Series:
         all_isbns = set(train_df['isbn'].unique())
         rated_isbns = set(train_df[train_df['user_id'] == user_id]['isbn'].unique())
+        num_items = len(all_isbns)
         unrated_books = all_isbns - rated_isbns
         predictions = []
         for isbn in unrated_books:
             pred_obj = model.predict(uid=user_id, iid=isbn)
             predictions.append((pred_obj.iid, pred_obj.est))
-        predictions.sort(key=lambda x: x[1], reverse=True)
+        isbns = [pred[0] for pred in predictions]
+        scores = [pred[1] for pred in predictions]
+        all_recommendations = pd.Series(scores, index=isbns)
         
-        logging.info(f"Generated {num_recommendation} recommendations for user {user_id} using SVD.")
-        return predictions[:num_recommendation]
+        all_recommendations.sort_values(ascending=False, inplace=True)
+        logging.info(f"Generated a full recommendation vector for user {user_id} using SVD.")
+
+        return all_recommendations 
 
     
     #create evaluation functions for the user based models
