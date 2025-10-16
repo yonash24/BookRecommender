@@ -619,6 +619,7 @@ class FeaturesEngineer:
         return x_train, x_test
     
     
+
     #create feature engineering for the hybrid model
     @staticmethod
     def hybrid_models_features_engineer(df:pd.DataFrame)->pd.DataFrame:
@@ -661,3 +662,19 @@ class FeaturesEngineer:
         final_x_train = df.drop(cols_to_drop, axis=1)
 
         return final_x_train
+
+    #preparing the data for knn prediction for hybrid model
+    #get the constructor data frame
+    @staticmethod
+    def hybrid_knn_als_data(df:pd.DataFrame, test_size=0.2, random_state=42)->Tuple[pd.DataFrame,csr_matrix]:
+        user_item_matrix = df.pivot_table(
+            index="user_id",
+            columns="isbn",
+            values="book_rating",
+            fill_value=0
+        )
+        logging.info("created user item matrix successfully")
+        sparse_matrix = csr_matrix(user_item_matrix.values)
+        return user_item_matrix, sparse_matrix
+    
+        

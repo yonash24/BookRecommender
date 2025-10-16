@@ -192,7 +192,7 @@ class TrainModel:
 
     # Helper function to predict a single rating for KNN
     @staticmethod
-    def _predict_knn_rating(user_idx, item_idx, model, train_matrix, k):
+    def predict_knn_rating(user_idx, item_idx, model, train_matrix, k):
         user_vector = train_matrix[user_idx]
         _, indices = model.kneighbors(user_vector, n_neighbors=k + 1)
         neighbor_indices = indices.flatten()[1:]
@@ -693,7 +693,7 @@ class HybridRecommender:
         context_based_prediction = self.context_based_model.predict(df)
         
         if isinstance(self.user_based_model,KNeighborsRegressor):
-            pass
+            knn_prediction = TrainModel._predict_knn_rating
         elif isinstance(self.user_based_model,SVD):
             pass
         else: #its als
