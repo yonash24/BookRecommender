@@ -152,7 +152,7 @@ class TrainModel:
         recommendation_scores = recommendation_scores[user_rated_books == 0]    
         top_recommends = recommendation_scores.sort_values(ascending=False)    
         logging.info(f"Generated {k} recommendations for user {user_id} using KNN.")
-        return top_recommends
+        return top_recommends.to_numpy()
 
     #ALS prediction
     @staticmethod
@@ -165,7 +165,7 @@ class TrainModel:
         all_recommendations = pd.Series(scores, index=isbns)
             
         logging.info(f"Generated {num_items} recommendations for user {user_id} using ALS.")
-        return all_recommendations
+        return all_recommendations.to_numpy()
 
     #SVD prediction
     @staticmethod
@@ -185,7 +185,7 @@ class TrainModel:
         all_recommendations.sort_values(ascending=False, inplace=True)
         logging.info(f"Generated a full recommendation vector for user {user_id} using SVD.")
 
-        return all_recommendations 
+        return all_recommendations
 
     
     #create evaluation functions for the user based models
@@ -629,7 +629,7 @@ class HybridRecommender:
     """
     #get the data frame from context_base_df in DataHandler
     def __init__(self, context_based_model_and_prediction:Tuple[BaseEstimator,np.array], user_based_model:BaseEstimator,
-                  user_item_matrix:csr_matrix, train_df:pd.DataFrame, test_df:BaseEstimator, data_df:pd.DataFrame, user_id:int, isbn:int):
+                  user_item_matrix:csr_matrix, train_df:pd.DataFrame, test_df:BaseEstimator, data_df:pd.DataFrame, user_id:int):
         self.context_based_model = context_based_model_and_prediction[0]
         self.context_based_prediction = context_based_model_and_prediction[1]
         self.user_based_model = user_based_model
@@ -638,7 +638,6 @@ class HybridRecommender:
         self.test_df = test_df
         self.data_df = data_df
         self.user_id = user_id
-        self.isbn = isbn
 
     #helper function that calaulat the weight for user/book by rating
     def custom_growth_curved(x, midpoint=10, steepness=0.3):
@@ -675,7 +674,7 @@ class HybridRecommender:
 
     #get how much weight you need to give to each model in the evaluation
     #get data frame from get_data_frame
-    def weight_per_model(self, df:pd.DataFrame):
+    def weight_per_model(self, df:pd.DataFrame)->np.ndarray:
         user_rating = len(self.data_df[self.data_df["user_id"] == self.user_id])
         user_estimate = HybridRecommender.custom_growth_curved(user_rating)
 
@@ -684,20 +683,42 @@ class HybridRecommender:
         book_df["estimate"] = book_rating.apply(HybridRecommender.custom_growth_curved)
         book_df["final_estimate"] = book_df["estimate"] * user_estimate
 
-        return book_df
+        return book_df["final_estimate"].to_numpy()
 
         
     #create recommendation by using hybrid model
     #get a data frame from get_data_frame of the 300 books
-    def recommend(self, df:pd.DataFrame):
-        context_based_prediction = self.context_based_model.predict(df)
+    def recommend(self,alpha:np.ndarray, df:pd.DataFrame):
+        context_df = FeaturesEngineer.hybrid_context_based_features_engineer(df)
+        context_based_prediction = self.context_based_model.predict(context_df)
+        isbn_df = df["isbn"]
         
-        if isinstance(self.user_based_model,KNeighborsRegressor):
-            knn_prediction = TrainModel._predict_knn_rating
+        if isinstance(self.user_based_model,NearestNeighbors):
+            data = FeaturesEngineer.hybrid_knn_als_data(self.data_df)
+            user_item_matrix = data[0]
+            sparse_matrix = data[1]
+
+            knn_full_prediction = TrainModel.user_based_knn_prediction(self.user_id,self.user_based_model,user_item_matrix,sparse_matrix)
+            user_based_prediction = knn_full_prediction.loc[isbn_df]
+
+
         elif isinstance(self.user_based_model,SVD):
-            pass
+            svd_prediction = TrainModel.user_based_svd_prediction(self.user_id, self.user_based_model, self.data_df)
+            user_based_prediction = svd_prediction.loc[isbn_df]
+
         else: #its als
-            pass
-            
-        
+            data = FeaturesEngineer.hybrid_knn_als_data(self.data_df)
+            user_item_matrix = data[0]
+            sparse_matrix = data[1]
+
+            als_prediction = TrainModel.user_based_als_prediction(self.user_id,self.user_based_model,user_item_matrix,sparse_matrix.T)
+            user_based_prediction = als_prediction.loc[isbn_df]
+
+        user_based_weight = alpha * user_based_prediction.to_numpy()
+        context_based_weight = (1-alpha) * context_based_prediction
+        hybrid_prediction = user_based_weight + context_based_weight
+
+        df["hybrid_prediction"] = hybrid_prediction
+        final_df = df.sort_values("hybrid_prediction", ascending=False)
+        return final_df.head(10)
         

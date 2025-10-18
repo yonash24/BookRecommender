@@ -622,7 +622,7 @@ class FeaturesEngineer:
 
     #create feature engineering for the hybrid model
     @staticmethod
-    def hybrid_models_features_engineer(df:pd.DataFrame)->pd.DataFrame:
+    def hybrid_context_based_features_engineer(df:pd.DataFrame)->pd.DataFrame:
         
         book_rating_mean_map = df.groupby("isbn")["book_rating"].mean()
         rating_count_map = df.groupby("isbn")["book_rating"].count()
