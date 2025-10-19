@@ -688,7 +688,7 @@ class HybridRecommender:
         
     #create recommendation by using hybrid model
     #get a data frame from get_data_frame of the 300 books
-    def recommend(self,alpha:np.ndarray, df:pd.DataFrame):
+    def recommend(self, alpha:np.ndarray, df:pd.DataFrame):
         context_df = FeaturesEngineer.hybrid_context_based_features_engineer(df)
         context_based_prediction = self.context_based_model.predict(context_df)
         isbn_df = df["isbn"]
@@ -722,3 +722,4 @@ class HybridRecommender:
         final_df = df.sort_values("hybrid_prediction", ascending=False)
         return final_df.head(10)
         
+    
