@@ -414,14 +414,14 @@ class DataPreProcess:
     #create a function that get the dictionary parameters and return 
     #split data that fit for svd model
     @staticmethod
-    def user_based_data_svd(data_dict:Dict[str,pd.DataFrame], test_size=0.2, random_state=42)->Tuple[pd.DataFrame,pd.DataFrame]:
+    def user_based_data_svd(data_dict:Dict[str,pd.DataFrame], test_size=0.2, random_state=42)->Tuple[pd.DataFrame, pd.DataFrame]:
         rating_df = data_dict["Ratings"]
         train_df, test_df = train_test_split(rating_df, test_size=test_size, random_state=random_state)
         return train_df, test_df
 
     #split the data for als knn models 
     @staticmethod
-    def user_based_data_als_knn(data_dict:Dict[str,pd.DataFrame],test_size=0.2, random_state=42)->Tuple[csr_matrix,csr_matrix]:
+    def user_based_data_als_knn(data_dict:Dict[str,pd.DataFrame],test_size=0.2, random_state=42)->Tuple[csr_matrix, csr_matrix, pd.DataFrame]:
         rating_df = data_dict["Ratings"]
 
         user_item_matrix = rating_df.pivot_table(
@@ -443,7 +443,7 @@ class DataPreProcess:
         train_matrix = csr_matrix((train_data,(train_rows,train_cols)), shape=sparse_matrix.shape)
         test_matrix = csr_matrix((test_data,(test_rows,test_cols)), shape=sparse_matrix.shape)
         logging.info("created train and test sparse matrixes successfully")
-        return train_matrix,test_matrix
+        return train_matrix,test_matrix, user_item_matrix
 
 
 ### preprocess context based model ###

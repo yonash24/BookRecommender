@@ -629,7 +629,7 @@ class HybridRecommender:
     """
     #get the data frame from context_base_df in DataHandler
     def __init__(self, context_based_model_and_prediction:Tuple[BaseEstimator,np.array], user_based_model:BaseEstimator,
-                  user_item_matrix:csr_matrix, train_df:pd.DataFrame, test_df:BaseEstimator, data_df:pd.DataFrame, user_id:int):
+                  user_item_matrix:csr_matrix, train_df:pd.DataFrame, test_df:pd.DataFrame, data_df:pd.DataFrame, user_id:int):
         self.context_based_model = context_based_model_and_prediction[0]
         self.context_based_prediction = context_based_model_and_prediction[1]
         self.user_based_model = user_based_model
