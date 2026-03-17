@@ -152,7 +152,7 @@ class TrainModel:
         recommendation_scores = recommendation_scores[user_rated_books == 0]    
         top_recommends = recommendation_scores.sort_values(ascending=False)    
         logging.info(f"Generated {k} recommendations for user {user_id} using KNN.")
-        return top_recommends.to_numpy()
+        return top_recommends
 
     #ALS prediction
     @staticmethod
@@ -165,7 +165,7 @@ class TrainModel:
         all_recommendations = pd.Series(scores, index=isbns)
             
         logging.info(f"Generated {num_items} recommendations for user {user_id} using ALS.")
-        return all_recommendations.to_numpy()
+        return all_recommendations
 
     #SVD prediction
     @staticmethod
@@ -224,9 +224,6 @@ class TrainModel:
         avg_recall = np.mean(all_recalls) if all_recalls else 0
         
         test_user_indices, test_item_indices = test_matrix.nonzero()
-        actual_ratings = test_matrix.data
-        predicted_ratings = [TrainModel._predict_knn_rating(u, i, model, train_matrix, k) for u, i in zip(test_user_indices, test_item_indices)]
-            
         mse = mean_squared_error(actual_ratings, predicted_ratings)
         rmse = np.sqrt(mse)
 
@@ -310,9 +307,6 @@ class TrainModel:
         
         # --- 2. Calculate RMSE ---
         test_user_indices, test_item_indices = test_matrix.nonzero()
-        actual_ratings = test_matrix.data
-        predicted_ratings = [TrainModel._predict_als_rating(u, i, model) for u, i in zip(test_user_indices, test_item_indices)]
-            
         mse = mean_squared_error(actual_ratings, predicted_ratings)
         rmse = np.sqrt(mse)
         
@@ -629,7 +623,7 @@ class HybridRecommender:
     """
     #get the data frame from context_base_df in DataHandler
     def __init__(self, context_based_model_and_prediction:Tuple[BaseEstimator,np.array], user_based_model:BaseEstimator,
-                  user_item_matrix:csr_matrix, train_df:pd.DataFrame, test_df:pd.DataFrame, data_df:pd.DataFrame, user_id:int):
+                  user_item_matrix:pd.DataFrame, train_df:pd.DataFrame, test_df:pd.DataFrame, data_df:pd.DataFrame, user_id:int):
         self.context_based_model = context_based_model_and_prediction[0]
         self.context_based_prediction = context_based_model_and_prediction[1]
         self.user_based_model = user_based_model
@@ -640,6 +634,7 @@ class HybridRecommender:
         self.user_id = user_id
 
     #helper function that calaulat the weight for user/book by rating
+    @staticmethod
     def custom_growth_curved(x, midpoint=10, steepness=0.3):
         def shifted_sigmoid(val):
             return 1/(1+np.exp(-steepness * (val - midpoint)))
@@ -657,7 +652,7 @@ class HybridRecommender:
         unread_books = np.setdiff1d(all_books, user_books_df)
         filtered_df = self.data_df[self.data_df["isbn"].isin(unread_books)]
         preprocess_df = DataPreProcess.hybride_model_sample(filtered_df)
-        prediction_df = FeaturesEngineer.hybrid_models_features_engineer(preprocess_df)
+        prediction_df = FeaturesEngineer.hybrid_context_based_features_engineer(preprocess_df)
 
         prediction = self.context_based_model.predict(prediction_df)
         prediction_df["prediction"] = prediction
