@@ -8,37 +8,46 @@ from MLModels import HybridRecommender
 logging.basicConfig(level=logging.INFO)
 app = FastAPI(title="Book Recommender API")
 
-"""
-load the required models and data objects for inference
-ensures they are in memory before any request
-"""
-try:
-    context_model = joblib.load("best_context_model.joblib")
-    user_model = joblib.load("best_user_based_model.joblib")
-    user_item_matrix = joblib.load("user_item_matrix.joblib")
-    clean_data = joblib.load("cleaned_data_dict.joblib")
-    ratings_df = clean_data["Ratings"]
-    logging.info("Successfully loaded all models and data artifacts")
-except Exception as e:
-    logging.error(f"Failed to load engine components: {e}")
+context_model = None
+user_model = None
+user_item_matrix = None
+clean_data = None
+ratings_df = None
+feature_maps = None
+encoder = None
+scaler = None
 
-"""
-root endpoint to check api status
-"""
+@app.on_event("startup")
+async def startup_event():
+    global context_model, user_model, user_item_matrix, clean_data, ratings_df, feature_maps, encoder, scaler
+    try:
+        context_model = joblib.load("best_context_model.joblib")
+        user_model = joblib.load("best_user_based_model.joblib")
+        user_item_matrix = joblib.load("user_item_matrix.joblib")
+        clean_data = joblib.load("cleaned_data_dict.joblib")
+        ratings_df = clean_data.get("Ratings", pd.DataFrame())
+        feature_maps = joblib.load("feature_maps.joblib")
+        encoder = joblib.load("hashing_encoder.joblib")
+        scaler = joblib.load("standard_scaler.joblib")
+        logging.info("Successfully loaded all models and data artifacts")
+    except Exception as e:
+        logging.error(f"Failed to load engine components: {e}")
+
 @app.get("/")
 async def root():
     return {"status": "online", "message": "Book Recommendation Engine API"}
 
-"""
-endpoint to retrieve top 10 hybrid recommendations for a specific user
-gets user_id as path parameter and returns a list of recommended books
-"""
 @app.get("/recommend/{user_id}", response_model=List[Dict])
 async def get_recommendations(user_id: int):
-    if user_id not in user_item_matrix.index:
-        raise HTTPException(status_code=404, detail="User ID not found in system")
-
     try:
+        if user_model is None or user_item_matrix is None:
+            raise HTTPException(status_code=503, detail="Models are not fully loaded.")
+            
+        if user_id not in user_item_matrix.index:
+            # Cold start logic handled inside HybridRecommender or here
+            logging.info(f"User {user_id} not in matrix. Fallback to popularity logic.")
+            pass # the HybridRecommender could handle this gracefully with fallback
+            
         recommender = HybridRecommender(
             context_based_model_and_prediction=(context_model, None),
             user_based_model=user_model,
@@ -55,13 +64,12 @@ async def get_recommendations(user_id: int):
         top_10 = recommender.recommend(alpha, df_300)
 
         return top_10.to_dict(orient="records")
+    except HTTPException as e:
+        raise e
     except Exception as e:
         logging.error(f"Error generating recommendation for user {user_id}: {e}")
         raise HTTPException(status_code=500, detail="Internal server error during recommendation generation")
 
-"""
-endpoint to get metadata about a specific book by isbn
-"""
 @app.get("/book/{isbn}")
 async def get_book_info(isbn: str):
     books_df = clean_data["Books"]

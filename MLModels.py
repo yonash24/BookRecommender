@@ -205,36 +205,32 @@ class TrainModel:
     @staticmethod
     def evaluate_knn_model(model, train_matrix, test_matrix, user_item_matrix, k=10, rating_threshold=8.0):
         all_precisions, all_recalls = [], []
-        
         for user_idx in range(test_matrix.shape[0]):
             user_id = user_item_matrix.index[user_idx]
-            
             relevant_items = set(user_item_matrix.columns[test_matrix[user_idx].indices[test_matrix[user_idx].data >= rating_threshold]])
             if not relevant_items:
                 continue
-            
             recs = TrainModel.user_based_knn_prediction(user_id, model, user_item_matrix, train_matrix, k=k)
-            recommended_items = {isbn for isbn, score in recs}
-            
+            recommended_items = {isbn for isbn, score in recs.items()}
             hits = len(recommended_items.intersection(relevant_items))
             all_precisions.append(hits / k)
             all_recalls.append(hits / len(relevant_items))
-
         avg_precision = np.mean(all_precisions) if all_precisions else 0
         avg_recall = np.mean(all_recalls) if all_recalls else 0
-        
+
         test_user_indices, test_item_indices = test_matrix.nonzero()
-        mse = mean_squared_error(actual_ratings, predicted_ratings)
+        actual_ratings = test_matrix.data
+        predicted_ratings = []
+        for i in range(len(test_user_indices)):
+            u_idx = test_user_indices[i]
+            i_idx = test_item_indices[i]
+            pred = TrainModel.predict_knn_rating(u_idx, i_idx, model, train_matrix, k)
+            predicted_ratings.append(pred)
+        
+        mse = mean_squared_error(actual_ratings, predicted_ratings) if actual_ratings.size > 0 else 0
         rmse = np.sqrt(mse)
-
-        logging.info(f"KNN Model Evaluation (k={k}):")
-        logging.info(f"  - RMSE: {rmse:.4f}")
-        logging.info(f"  - Average Precision: {avg_precision:.4f}")
-        logging.info(f"  - Average Recall: {avg_recall:.4f}")
-
         return {"rmse": rmse, "precision": avg_precision, "recall": avg_recall}
 
-    #svd model evaluation
     @staticmethod
     def evaluate_svd_model(model: SVD, testset, k=10, rating_threshold=8.0):
         predictions = model.test(testset)
@@ -286,42 +282,30 @@ class TrainModel:
     @staticmethod
     def evaluate_als_model(model, train_matrix_T, test_matrix, user_item_matrix, k=10, rating_threshold=8.0):
         all_precisions, all_recalls = [], []
-
-        # --- 1. Calculate Precision and Recall @k ---
         for user_idx in range(test_matrix.shape[0]):
             user_id = user_item_matrix.index[user_idx]
             relevant_items = set(user_item_matrix.columns[test_matrix[user_idx].indices[test_matrix[user_idx].data >= rating_threshold]])
-            if not relevant_items:
-                continue
-            
-            # Get Top-K recommendations using the ALS function
-            recs = TrainModel.user_based_als_prediction(user_id, model, user_item_matrix, train_matrix_T, num_recommendation=k)
-            recommended_items = {isbn for isbn, score in recs}
-
+            if not relevant_items: continue
+            recs = TrainModel.user_based_als_prediction(user_id, model, user_item_matrix, train_matrix_T)
+            recommended_items = {isbn for isbn, score in recs.head(k).items()}
             hits = len(recommended_items.intersection(relevant_items))
             all_precisions.append(hits / k)
             all_recalls.append(hits / len(relevant_items))
-
         avg_precision = np.mean(all_precisions) if all_precisions else 0
         avg_recall = np.mean(all_recalls) if all_recalls else 0
-        
-        # --- 2. Calculate RMSE ---
+
         test_user_indices, test_item_indices = test_matrix.nonzero()
-        mse = mean_squared_error(actual_ratings, predicted_ratings)
+        actual_ratings = test_matrix.data
+        predicted_ratings = []
+        for i in range(len(test_user_indices)):
+            u_idx = test_user_indices[i]
+            i_idx = test_item_indices[i]
+            pred = TrainModel.predict_als_rating(u_idx, i_idx, model)
+            predicted_ratings.append(pred)
+        
+        mse = mean_squared_error(actual_ratings, predicted_ratings) if actual_ratings.size > 0 else 0
         rmse = np.sqrt(mse)
-        
-        logging.info(f"ALS Model Evaluation (k={k}):")
-        logging.info(f"  - RMSE: {rmse:.4f}")
-        logging.info(f"  - Average Precision: {avg_precision:.4f}")
-        logging.info(f"  - Average Recall: {avg_recall:.4f}")
-        
         return {"rmse": rmse, "precision": avg_precision, "recall": avg_recall}
-
-
-
-"""
-create class with functions to improve the models
-"""
 
 class ModelsHyperparametersImprovment:
 
@@ -647,74 +631,16 @@ class HybridRecommender:
 
     #helper function create a recommendation of the top 300 book that fit to the user by context base model
     def book_sample_recommmend(self)->pd.DataFrame:
-        user_books_df = self.data_df[self.data_df["user_id"] == self.user_id]["isbn"].unique()    
+        user_books_df = self.data_df[self.data_df["user_id"] == self.user_id]["isbn"].unique()
         all_books = self.data_df["isbn"].unique()
         unread_books = np.setdiff1d(all_books, user_books_df)
         filtered_df = self.data_df[self.data_df["isbn"].isin(unread_books)]
+        from DataHandler import DataPreProcess, FeaturesEngineer
         preprocess_df = DataPreProcess.hybride_model_sample(filtered_df)
         prediction_df = FeaturesEngineer.hybrid_context_based_features_engineer(preprocess_df)
-
+        
         prediction = self.context_based_model.predict(prediction_df)
-        prediction_df["prediction"] = prediction
-        final_df = prediction_df.sort_values("prediction", ascending=False).head(300)
-
+        preprocess_df["prediction"] = prediction
+        final_df = preprocess_df.sort_values("prediction", ascending=False).head(300)
         return final_df
 
-    #helper function get the data frame from  book_sample_recommmend and return the original data frame with the 300
-    #books with user id and isbn
-    def get_data_frame(self, df:pd.DataFrame)->pd.DataFrame:
-        books = df["isbn"].unique()
-        filtered_df = self.data_df[self.data_df["isbn"].isin(books)]
-        return filtered_df
-
-    #get how much weight you need to give to each model in the evaluation
-    #get data frame from get_data_frame
-    def weight_per_model(self, df:pd.DataFrame)->np.ndarray:
-        user_rating = len(self.data_df[self.data_df["user_id"] == self.user_id])
-        user_estimate = HybridRecommender.custom_growth_curved(user_rating)
-
-        book_rating = df.groupby("isbn")["book_rating"].count()
-        book_df = book_rating.to_frame()
-        book_df["estimate"] = book_rating.apply(HybridRecommender.custom_growth_curved)
-        book_df["final_estimate"] = book_df["estimate"] * user_estimate
-
-        return book_df["final_estimate"].to_numpy()
-
-        
-    #create recommendation by using hybrid model
-    #get a data frame from get_data_frame of the 300 books
-    def recommend(self, alpha:np.ndarray, df:pd.DataFrame):
-        context_df = FeaturesEngineer.hybrid_context_based_features_engineer(df)
-        context_based_prediction = self.context_based_model.predict(context_df)
-        isbn_df = df["isbn"]
-        
-        if isinstance(self.user_based_model,NearestNeighbors):
-            data = FeaturesEngineer.hybrid_knn_als_data(self.data_df)
-            user_item_matrix = data[0]
-            sparse_matrix = data[1]
-
-            knn_full_prediction = TrainModel.user_based_knn_prediction(self.user_id,self.user_based_model,user_item_matrix,sparse_matrix)
-            user_based_prediction = knn_full_prediction.loc[isbn_df]
-
-
-        elif isinstance(self.user_based_model,SVD):
-            svd_prediction = TrainModel.user_based_svd_prediction(self.user_id, self.user_based_model, self.data_df)
-            user_based_prediction = svd_prediction.loc[isbn_df]
-
-        else: #its als
-            data = FeaturesEngineer.hybrid_knn_als_data(self.data_df)
-            user_item_matrix = data[0]
-            sparse_matrix = data[1]
-
-            als_prediction = TrainModel.user_based_als_prediction(self.user_id,self.user_based_model,user_item_matrix,sparse_matrix.T)
-            user_based_prediction = als_prediction.loc[isbn_df]
-
-        user_based_weight = alpha * user_based_prediction.to_numpy()
-        context_based_weight = (1-alpha) * context_based_prediction
-        hybrid_prediction = user_based_weight + context_based_weight
-
-        df["hybrid_prediction"] = hybrid_prediction
-        final_df = df.sort_values("hybrid_prediction", ascending=False)
-        return final_df.head(10)
-        
-    

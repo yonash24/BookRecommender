@@ -421,115 +421,24 @@ class DataPreProcess:
 
     #split the data for als knn models 
     @staticmethod
-    def user_based_data_als_knn(data_dict:Dict[str,pd.DataFrame],test_size=0.2, random_state=42)->Tuple[csr_matrix, csr_matrix, pd.DataFrame]:
+    def user_based_data_als_knn(data_dict, test_size=0.2, random_state=42):
         rating_df = data_dict["Ratings"]
-
-        user_item_matrix = rating_df.pivot_table(
-            index="user_id",
-            columns="isbn",
-            values="book_rating",
-            fill_value=0
-        )
+        users = rating_df["user_id"].astype('category')
+        books = rating_df["isbn"].astype('category')
+        sparse_matrix = csr_matrix((rating_df["book_rating"].values, (users.cat.codes, books.cat.codes)), shape=(len(users.cat.categories), len(books.cat.categories)))
+        user_item_matrix = pd.DataFrame.sparse.from_spmatrix(sparse_matrix, index=users.cat.categories, columns=books.cat.categories)
         logging.info("created user item matrix successfully")
-        sparse_matrix = csr_matrix(user_item_matrix.values)
         rows, cols = sparse_matrix.nonzero()
         data = sparse_matrix.data
+        from sklearn.model_selection import train_test_split
         train_data, test_data, train_rows, test_rows, train_cols, test_cols = train_test_split(
-            data,rows,cols,
-            test_size=test_size,
-            random_state=random_state,
-            stratify=rows
+            data,rows,cols, test_size=test_size, random_state=random_state, stratify=rows
         )
         train_matrix = csr_matrix((train_data,(train_rows,train_cols)), shape=sparse_matrix.shape)
         test_matrix = csr_matrix((test_data,(test_rows,test_cols)), shape=sparse_matrix.shape)
         logging.info("created train and test sparse matrixes successfully")
         return train_matrix,test_matrix, user_item_matrix
 
-
-### preprocess context based model ###
-
-    #create the context based data frame for the model
-    @staticmethod
-    def context_based_df(data_dict:Dict[str,pd.DataFrame])->pd.DataFrame:
-        try:
-            rating_df = data_dict["Ratings"]
-            book_df = data_dict["Books"]
-            user_df = data_dict["Users"]
-            merged_df1 = pd.merge(rating_df,user_df,on="user_id")
-            merged_df2 = pd.merge(merged_df1,book_df, on="isbn")
-            logging.info("merged the 3 clean data frames in the data dictionary")
-
-            return merged_df2
-        
-        except Exception as e:
-            logging.error("possibly the dict keys are lower cases, returning empty data frame")
-            return pd.DataFrame()
-        
-    #filter the data frame from books how got less then 3 rates and users how rates less then 2 books
-    @staticmethod
-    def filter_df(df:pd.DataFrame)->pd.DataFrame:
-        min_user_rate = 3
-        min_book_rate = 3
-        user_count = df["user_id"].value_counts()
-        books_count = df["isbn"].value_counts()
-        
-        active_user = user_count[user_count >= min_user_rate].index        
-        active_book = books_count[books_count >= min_book_rate].index        
-        
-        df = df[df["user_id"].isin(active_user)]
-        logging.info("removed all users who rated less then 3 books")
-        df = df[df["isbn"].isin(active_book)]
-        logging.info("removed all books who have less then 3 rates")
-
-        cols_to_drop = ["user_id","isbn","book_title"]
-        final_df = df.drop(cols_to_drop, axis=1)
-        logging.info("drop unrelevant columns for the next step")
-        return final_df
-    
-
-    #encode the data frame from context_based_df
-    #col "location" woth one hot encoding
-    #cols "publishers" and "author" with hashing encoding
-    @staticmethod
-    def context_based_encoding(df:pd.DataFrame)->pd.DataFrame:
-        location_encoded_df = pd.get_dummies(df,columns=["location"], drop_first=True)
-        logging.info("encoded loaction with one hot encoding")
-        encoder = HashingEncoder(n_components=64,cols=["book_author","publisher"])
-        hash_encoded_df = encoder.fit_transform(location_encoded_df)
-        logging.info("hash encoding successfully")
-        return hash_encoded_df
-    
-    #split the data into data frame features and target vector based on context based dataf rame
-    #get data frame from context_based_df
-    @staticmethod
-    def featurs_target_splitting(df:pd.DataFrame)->Tuple[pd.DataFrame,pd.Series]:
-        target_vector = df["book_rating"]
-        features_df = df.drop("book_rating",axis=1)
-        logging.info("split the data into features data frame and target vector")
-        return features_df, target_vector
-        
-    #creating a pipeline for the context based model data preprocessing
-    @staticmethod
-    def context_based_data_preprocessing_pipeline(data_dict:Dict[str,pd.DataFrame])->Tuple[pd.DataFrame,pd.DataFrame,pd.Series,pd.Series]:
-        context_dict = DataPreProcess.context_based_df(data_dict)
-        filter_df = DataPreProcess.filter_df(context_dict)
-        encoding_df = DataPreProcess.context_based_encoding(filter_df)
-        initial_splitting = DataPreProcess.featurs_target_splitting(encoding_df)
-        final_data = DataPreProcess.split_data(initial_splitting)
-        return final_data
-
-### hybrid model preprocessing ###
-    
-    #create pipeline for hybrid model preprocessing data
-    @staticmethod
-    def hybride_model_sample(df:pd.DataFrame):
-        filter_df = DataPreProcess.filter_df(df)
-        encoding_df = DataPreProcess.context_based_encoding(filter_df)
-        return encoding_df
-
-### general preprocessing functions for all the data that need to be preprocessed ###
-
-    #split data into train and test 
     @staticmethod
     def split_data(data:Tuple[pd.DataFrame, pd.Series])->Tuple[pd.DataFrame,pd.DataFrame,pd.Series,pd.Series]:
         try:    
@@ -554,73 +463,51 @@ class FeaturesEngineer:
     #get data frame from context_based_df 
     #add to the data frame the rows: 
     @staticmethod
-    def context_base_models_features_engineer(x_train:pd.DataFrame, x_test:pd.DataFrame)->pd.DataFrame:
-        
-        book_rating_mean_map = x_train.groupby("isbn")["book_rating"].mean()
-        rating_count_map = x_train.groupby("isbn")["book_rating"].count()
-        book_rating_var_map = x_train.groupby("isbn")["book_rating"].var()
-        writer_mean_rating_map = x_train.groupby("book_author")["book_rating"].mean()
-        writer_book_count_map = x_train.groupby("book_author")["isbn"].nunique()
-        user_mean_rate_map = x_train.groupby("user_id")["book_rating"].mean()
-        user_rating_count_map = x_train.groupby("user_id")["book_rating"].count()
+    def context_base_models_features_engineer(x_train:pd.DataFrame, x_test:pd.DataFrame):
+        import joblib
+        book_rating_mean_map = x_train.groupby("isbn")["book_rating"].mean().to_dict()
+        rating_count_map = x_train.groupby("isbn")["book_rating"].count().to_dict()
+        book_rating_var_map = x_train.groupby("isbn")["book_rating"].var().to_dict()
+        writer_mean_rating_map = x_train.groupby("book_author")["book_rating"].mean().to_dict()
+        writer_book_count_map = x_train.groupby("book_author")["isbn"].nunique().to_dict()
+        user_mean_rate_map = x_train.groupby("user_id")["book_rating"].mean().to_dict()
+        user_rating_count_map = x_train.groupby("user_id")["book_rating"].count().to_dict()
 
-        x_train["book_mean_rate"] = x_train["isbn"].map(book_rating_mean_map)
-        x_test["book_mean_rate"] = x_test["isbn"].map(book_rating_mean_map)
-        logging.info("added the book mean rating to the train and test sets")
+        feature_maps = {
+            "book_rating_mean": book_rating_mean_map,
+            "rating_count": rating_count_map,
+            "book_rating_var": book_rating_var_map,
+            "writer_mean_rate": writer_mean_rating_map,
+            "writer_book_count": writer_book_count_map,
+            "user_mean_rate": user_mean_rate_map,
+            "user_rating_count": user_rating_count_map
+        }
+        joblib.dump(feature_maps, "feature_maps.joblib")
 
-        x_train["rating_count"] = x_train["isbn"].map(rating_count_map)
-        x_test["rating_count"] = x_test["isbn"].map(rating_count_map)
-        logging.info("added the rating varient to the train and test sets")
-
+        maps = feature_maps
+        x_train["book_mean_rate"] = x_train["isbn"].map(maps["book_rating_mean"])
+        x_train["rating_count"] = x_train["isbn"].map(maps["rating_count"])
         x_train["book_age"] = 2025 - x_train["year_of_publication"]
-        x_test["book_age"] = 2025 - x_train["year_of_publication"]
-        logging.info("added the book age to the train and test sets")
-
-        x_train["book_rating_var"] = x_train["isbn"].map(book_rating_var_map)
-        x_test["book_rating_var"] = x_test["isbn"].map(book_rating_var_map)
-        logging.info("added the rating count to the train and test sets")
-        
-        x_train["writer_mean_rate"] = x_train["book_author"].map(writer_mean_rating_map)
-        x_test["writer_mean_rate"] = x_test["book_author"].map(writer_mean_rating_map)
-        logging.info("added the rating count to the train and test sets")
-
-        x_train["writer_book_count"] = x_train["book_author"].map(writer_book_count_map)
-        x_test["writer_book_count"] = x_test["book_author"].map(writer_book_count_map)
-        logging.info("added the writer book count to the train and test sets")
-
-        x_train["user_mean_rate"] = x_train["user_id"].map(user_mean_rate_map)
-        x_test["user_mean_rate"] = x_test["user_id"].map(user_mean_rate_map)
-        logging.info("added the user mean rate to the train and test sets")
-
-        x_train["user_rating_count"] = x_train["user_id"].map(user_rating_count_map)
-        x_test["user_rating_count"] = x_test["user_id"].map(user_rating_count_map)
-        logging.info("added the user rating count to the train and test sets")
-
+        x_train["book_rating_var"] = x_train["isbn"].map(maps["book_rating_var"])
+        x_train["writer_mean_rate"] = x_train["book_author"].map(maps["writer_mean_rate"])
+        x_train["writer_book_count"] = x_train["book_author"].map(maps["writer_book_count"])
+        x_train["user_mean_rate"] = x_train["user_id"].map(maps["user_mean_rate"])
+        x_train["user_rating_count"] = x_train["user_id"].map(maps["user_rating_count"])
         x_train = x_train.fillna(0)
+
+        x_test["book_mean_rate"] = x_test["isbn"].map(maps["book_rating_mean"])
+        x_test["rating_count"] = x_test["isbn"].map(maps["rating_count"])
+        x_test["book_age"] = 2025 - x_test["year_of_publication"]
+        x_test["book_rating_var"] = x_test["isbn"].map(maps["book_rating_var"])
+        x_test["writer_mean_rate"] = x_test["book_author"].map(maps["writer_mean_rate"])
+        x_test["writer_book_count"] = x_test["book_author"].map(maps["writer_book_count"])
+        x_test["user_mean_rate"] = x_test["user_id"].map(maps["user_mean_rate"])
+        x_test["user_rating_count"] = x_test["user_id"].map(maps["user_rating_count"])
         x_test = x_test.fillna(0)
 
         cols_to_drop = ["user_id", "isbn", "book_title"]
-        final_x_train = x_train.drop(cols_to_drop, axis=1)
-        final_x_test = x_test.drop(cols_to_drop, axis=1)
+        return x_train.drop(cols_to_drop, axis=1), x_test.drop(cols_to_drop, axis=1)
 
-        return final_x_train, final_x_test
-
-    # data scale
-    @staticmethod
-    def context_based_models_df_standartization(x_train:pd.DataFrame, x_test:pd.DataFrame):
-        cols_to_standart = ["book_rating_mean", "rating_count", "book_rating_var", "writer_book_count", "writer_mean_rating", "user_mean_rate", "user_rating_count","book_age"]
-        scaler = StandardScaler()
-        scaler.fit(x_train[cols_to_standart])
-        logging.info("standart the new data frame columns")
-
-        x_train[cols_to_standart] = scaler.transform(x_train[cols_to_standart])
-        x_test[cols_to_standart] = scaler.transform(x_test[cols_to_standart])
-
-        return x_train, x_test
-    
-    
-
-    #create feature engineering for the hybrid model
     @staticmethod
     def hybrid_context_based_features_engineer(df:pd.DataFrame)->pd.DataFrame:
         
@@ -678,3 +565,4 @@ class FeaturesEngineer:
         return user_item_matrix, sparse_matrix
     
         
+
