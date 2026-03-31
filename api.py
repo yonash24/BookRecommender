@@ -13,20 +13,18 @@ user_model = None
 user_item_matrix = None
 clean_data = None
 ratings_df = None
-feature_maps = None
 encoder = None
 scaler = None
 
 @app.on_event("startup")
 async def startup_event():
-    global context_model, user_model, user_item_matrix, clean_data, ratings_df, feature_maps, encoder, scaler
+    global context_model, user_model, user_item_matrix, clean_data, ratings_df, encoder, scaler
     try:
         context_model = joblib.load("best_context_model.joblib")
         user_model = joblib.load("best_user_based_model.joblib")
         user_item_matrix = joblib.load("user_item_matrix.joblib")
         clean_data = joblib.load("cleaned_data_dict.joblib")
         ratings_df = clean_data.get("Ratings", pd.DataFrame())
-        feature_maps = joblib.load("feature_maps.joblib")
         encoder = joblib.load("hashing_encoder.joblib")
         scaler = joblib.load("standard_scaler.joblib")
         logging.info("Successfully loaded all models and data artifacts")
@@ -40,13 +38,16 @@ async def root():
 @app.get("/recommend/{user_id}", response_model=List[Dict])
 async def get_recommendations(user_id: int):
     try:
-        if user_model is None or user_item_matrix is None:
+        if user_model is None or context_model is None:
             raise HTTPException(status_code=503, detail="Models are not fully loaded.")
             
+        # Cold Start Fallback
         if user_id not in user_item_matrix.index:
-            # Cold start logic handled inside HybridRecommender or here
             logging.info(f"User {user_id} not in matrix. Fallback to popularity logic.")
-            pass # the HybridRecommender could handle this gracefully with fallback
+            books_df = clean_data["Books"]
+            top_10 = ratings_df['isbn'].value_counts().head(10).index
+            popular_books = books_df[books_df['isbn'].isin(top_10)].to_dict(orient="records")
+            return popular_books
             
         recommender = HybridRecommender(
             context_based_model_and_prediction=(context_model, None),

@@ -6,139 +6,81 @@ from xgboost import XGBRegressor
 from lightgbm import LGBMRegressor
 from sklearn.base import BaseEstimator
 import numpy as np
-from sklearn.metrics import mean_squared_error , r2_score
-from sklearn.neighbors import KNeighborsRegressor, NearestNeighbors
-from surprise import SVD, Dataset, Reader
-from surprise.model_selection import train_test_split
-from scipy.sparse import csr_matrix
-from implicit.als import AlternatingLeastSquares
-from sklearn.model_selection import RandomizedSearchCV
-from sklearn.preprocessing import StandardScaler
-from collections import defaultdict
-from surprise import accuracy
+from sklearn.metrics import mean_squared_error, r2_score
+from sklearn.neighbors import NearestNeighbors
+from surprise import SVD, Dataset, Reader, KNNBasic, accuracy
 from surprise.model_selection import GridSearchCV as SurpriseGridSearch
-from surprise import KNNBasic
 from surprise.model_selection import train_test_split as surprise_split
 from implicit.evaluation import train_test_split as implicit_split
 from implicit.evaluation import precision_at_k
+from implicit.als import AlternatingLeastSquares
+from scipy.sparse import csr_matrix
+from sklearn.model_selection import RandomizedSearchCV
+from typing import Tuple
+from collections import defaultdict
 import itertools
 import joblib
-from typing import Tuple
 from DataHandler import DataPreProcess, FeaturesEngineer
-
 
 logging.basicConfig(level=logging.INFO)
 
-
-"""
-create class to build and train the models
-all the data get its data from DataPrePricess class
-"""
-
 class TrainModel:
-
-### create and train and evaluate context based models ###
-#in each function we train the model make prediction and evaluate the prediction 
-#they all get the data from context_based_data_preprocessing_pipeline in DataPreProcessing class
-
-    #linear regression model 
     @staticmethod
-    def context_based_linear_regression_model(x_train:pd.DataFrame, x_test:pd.DataFrame, y_train:pd.Series):
+    def context_based_linear_regression_model(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.Series):
         model = LinearRegression()
-        model.fit(x_train,y_train)
-        logging.info("model training complete")
+        model.fit(x_train, y_train)
         prediction = model.predict(x_test)
-        logging.info("created prediction")
-
         return model, prediction
     
-    #random forest tree regression
     @staticmethod
-    def context_based_radom_tree_regression(x_train:pd.DataFrame, x_test:pd.DataFrame, y_train:pd.Series):
+    def context_based_radom_tree_regression(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.Series):
         model = RandomForestRegressor(n_estimators=100, random_state=42)
         model.fit(x_train, y_train)
-        logging.info("training context based random forest regression model")
         prediction = model.predict(x_test)
-        logging.info("create a prediction")
         return model, prediction
     
-    #extrime gradient boosting model
     @staticmethod
-    def XBG_gradient_boosting_model(x_train:pd.DataFrame, x_test:pd.DataFrame, y_train:pd.Series):
+    def XBG_gradient_boosting_model(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.Series):
         model = XGBRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
         model.fit(x_train, y_train)
-        logging.info("successfully trained the model")
         prediction = model.predict(x_test)
-        logging.info("prediction has been made")
         return model, prediction
     
-    #light gradient boosting model
     @staticmethod
-    def Light_gradient_boosting_model(x_train:pd.DataFrame, x_test:pd.DataFrame, y_train:pd.Series):
-        model = LGBMRegressor(n_estimators=100,learning_rate=0.1, random_state=42)
+    def Light_gradient_boosting_model(x_train: pd.DataFrame, x_test: pd.DataFrame, y_train: pd.Series):
+        model = LGBMRegressor(n_estimators=100, learning_rate=0.1, random_state=42)
         model.fit(x_train, y_train)
-        logging.info("create and train model")
         prediction = model.predict(x_test)
-        logging.info("successfully created a prediction")
         return model, prediction
     
-    #models evaluation 
     @staticmethod
-    def context_based_models_evaluetion(prediction:np.ndarray, y_test:pd.Series):
+    def context_based_models_evaluetion(prediction: np.ndarray, y_test: pd.Series):
         mse = mean_squared_error(y_test, prediction)
-        logging.info(f"the mse evaluetion is: {mse}")
         rmse = np.sqrt(mse)
-        logging.info(f"the rmse evaluetion is: {rmse}")
         r2 = r2_score(y_test, prediction)
-        logging.info(f"the r2 evaluetion is: {r2}")
+        return {'r2': r2, 'mse': mse, 'rmse': rmse}
 
-        evaluation_scores = {
-        'r2': r2,
-        'mse': mse,
-        'rmse': rmse
-        }
-        return evaluation_scores
-
-
-### create train and evaluate users based model ###
-#get user-item train matrix from split_user_item_matrix in DataPreProcessing
-
-    #KNN model
     @staticmethod
     def knn_user_based_model(train_matrix):
         model = NearestNeighbors(metric="cosine", algorithm="brute")
         model.fit(train_matrix)
-        logging.info("successfully created user based model with KNN")
-        
         return model
     
-    
-    #ALS model
     @staticmethod
     def als_user_based_model(train_matrix):
         model = AlternatingLeastSquares(factors=50, regularization=0.01, iterations=20)
         model.fit(train_matrix.T)
-        logging.info("ALS model creates and trained successfully")
-        
         return model
     
-    ## important!! SVD algorithm get Ratins dataframe not the item user matrix
-
-    #svd model
-    #return the model the train set and the test set
     @staticmethod
-    def svd_user_based_model(rating_df:pd.DataFrame):
-        reader = Reader(rating_scale=(1,10))    #rating scale
-        data = Dataset.load_from_df(rating_df[["user_id", "isbn", "book_rating"]], reader)   #surprise data object
-        train_set, testset = train_test_split(data, test_size=0.2, random_state=42)   #split the data into 2 matrixes
+    def svd_user_based_model(rating_df: pd.DataFrame):
+        reader = Reader(rating_scale=(1, 10))
+        data = Dataset.load_from_df(rating_df[["user_id", "isbn", "book_rating"]], reader)
+        train_set, testset = surprise_split(data, test_size=0.2, random_state=42)
         model = SVD(n_factors=50, random_state=42)
         model.fit(train_set)
-        logging.info("SVD model create and trained successfully")
         return model, train_set, testset
 
-    #create user based predictions
-      
-    #KNN prediction
     @staticmethod
     def user_based_knn_prediction(user_id: int, model: NearestNeighbors, user_item_matrix: pd.DataFrame, train_matrix: csr_matrix, k=5) -> pd.Series:
         user_index = user_item_matrix.index.get_loc(user_id)
@@ -150,47 +92,27 @@ class TrainModel:
         recommendation_scores = pd.Series(recommendation_scores_array.A1, index=user_item_matrix.columns)
         user_rated_books = user_item_matrix.iloc[user_index]    
         recommendation_scores = recommendation_scores[user_rated_books == 0]    
-        top_recommends = recommendation_scores.sort_values(ascending=False)    
-        logging.info(f"Generated {k} recommendations for user {user_id} using KNN.")
-        return top_recommends
+        return recommendation_scores.sort_values(ascending=False)
 
-    #ALS prediction
     @staticmethod
     def user_based_als_prediction(user_id: int, model: AlternatingLeastSquares, user_item_matrix: pd.DataFrame, train_matrix_T: csr_matrix) -> pd.Series:
         num_items = train_matrix_T.shape[1]
         user_index = user_item_matrix.index.get_loc(user_id)        
         item_indices, scores = model.recommend(user_index, train_matrix_T, N=num_items) 
         isbns = user_item_matrix.columns[item_indices]
-        
-        all_recommendations = pd.Series(scores, index=isbns)
-            
-        logging.info(f"Generated {num_items} recommendations for user {user_id} using ALS.")
-        return all_recommendations
+        return pd.Series(scores, index=isbns)
 
-    #SVD prediction
     @staticmethod
     def user_based_svd_prediction(user_id: int, model: SVD, train_df: pd.DataFrame) -> pd.Series:
         all_isbns = set(train_df['isbn'].unique())
         rated_isbns = set(train_df[train_df['user_id'] == user_id]['isbn'].unique())
-        num_items = len(all_isbns)
         unrated_books = all_isbns - rated_isbns
-        predictions = []
-        for isbn in unrated_books:
-            pred_obj = model.predict(uid=user_id, iid=isbn)
-            predictions.append((pred_obj.iid, pred_obj.est))
+        predictions = [(model.predict(uid=user_id, iid=isbn).iid, model.predict(uid=user_id, iid=isbn).est) for isbn in unrated_books]
         isbns = [pred[0] for pred in predictions]
         scores = [pred[1] for pred in predictions]
-        all_recommendations = pd.Series(scores, index=isbns)
-        
-        all_recommendations.sort_values(ascending=False, inplace=True)
-        logging.info(f"Generated a full recommendation vector for user {user_id} using SVD.")
+        recommendations = pd.Series(scores, index=isbns)
+        return recommendations.sort_values(ascending=False)
 
-        return all_recommendations
-
-    
-    #create evaluation functions for the user based models
-
-    # Helper function to predict a single rating for KNN
     @staticmethod
     def predict_knn_rating(user_idx, item_idx, model, train_matrix, k):
         user_vector = train_matrix[user_idx]
@@ -200,88 +122,65 @@ class TrainModel:
         valid_ratings = neighbor_ratings[neighbor_ratings > 0]
         return np.mean(valid_ratings) if valid_ratings.size > 0 else train_matrix.data.mean()
 
-
-    #knn model evaluation
     @staticmethod
     def evaluate_knn_model(model, train_matrix, test_matrix, user_item_matrix, k=10, rating_threshold=8.0):
         all_precisions, all_recalls = [], []
+        actual_ratings, predicted_ratings = [], []
         for user_idx in range(test_matrix.shape[0]):
             user_id = user_item_matrix.index[user_idx]
             relevant_items = set(user_item_matrix.columns[test_matrix[user_idx].indices[test_matrix[user_idx].data >= rating_threshold]])
-            if not relevant_items:
-                continue
+            if not relevant_items: continue
             recs = TrainModel.user_based_knn_prediction(user_id, model, user_item_matrix, train_matrix, k=k)
             recommended_items = {isbn for isbn, score in recs.items()}
             hits = len(recommended_items.intersection(relevant_items))
             all_precisions.append(hits / k)
             all_recalls.append(hits / len(relevant_items))
+            
         avg_precision = np.mean(all_precisions) if all_precisions else 0
         avg_recall = np.mean(all_recalls) if all_recalls else 0
-
         test_user_indices, test_item_indices = test_matrix.nonzero()
-        actual_ratings = test_matrix.data
-        predicted_ratings = []
-        for i in range(len(test_user_indices)):
-            u_idx = test_user_indices[i]
-            i_idx = test_item_indices[i]
-            pred = TrainModel.predict_knn_rating(u_idx, i_idx, model, train_matrix, k)
-            predicted_ratings.append(pred)
-        
-        mse = mean_squared_error(actual_ratings, predicted_ratings) if actual_ratings.size > 0 else 0
-        rmse = np.sqrt(mse)
-        return {"rmse": rmse, "precision": avg_precision, "recall": avg_recall}
+        for u_idx, i_idx in zip(test_user_indices, test_item_indices):
+            actual_ratings.append(test_matrix[u_idx, i_idx])
+            predicted_ratings.append(TrainModel.predict_knn_rating(u_idx, i_idx, model, train_matrix, k))
+            
+        mse = mean_squared_error(actual_ratings, predicted_ratings) if actual_ratings else 0
+        return {"rmse": np.sqrt(mse), "precision": avg_precision, "recall": avg_recall}
 
     @staticmethod
     def evaluate_svd_model(model: SVD, testset, k=10, rating_threshold=8.0):
         predictions = model.test(testset)
         rmse = accuracy.rmse(predictions, verbose=False)
-
         user_predictions = defaultdict(list)
+        user_ground_truth = defaultdict(list)
         for uid, iid, true_r, est, _ in predictions:
             user_predictions[uid].append((iid, est))
-
-        user_ground_truth = defaultdict(list)
-        for uid, iid, true_r in testset:
             if true_r >= rating_threshold:
                 user_ground_truth[uid].append(iid)
 
-        all_precisions = dict()
-        all_recalls = dict()
-
+        all_precisions, all_recalls = dict(), dict()
         for uid, user_preds in user_predictions.items():
-            if not user_ground_truth[uid]:
-                continue
-
+            if not user_ground_truth[uid]: continue
             user_preds.sort(key=lambda x: x[1], reverse=True)
             recommended_items = {iid for (iid, est) in user_preds[:k]}
-            
             ground_truth_items = set(user_ground_truth[uid])
             hits = len(recommended_items.intersection(ground_truth_items))
-
             all_precisions[uid] = hits / k
             all_recalls[uid] = hits / len(ground_truth_items)
-
-        avg_precision = sum(prec for prec in all_precisions.values()) / len(all_precisions)
-        avg_recall = sum(rec for rec in all_recalls.values()) / len(all_recalls)
-
-        logging.info(f"SVD Model Evaluation (k={k}):")
-        logging.info(f"  - RMSE: {rmse:.4f}")
-        logging.info(f"  - Average Precision: {avg_precision:.4f}")
-        logging.info(f"  - Average Recall: {avg_recall:.4f}")
-
+            
+        avg_precision = sum(prec for prec in all_precisions.values()) / max(1, len(all_precisions))
+        avg_recall = sum(rec for rec in all_recalls.values()) / max(1, len(all_recalls))
         return {"rmse": rmse, "precision": avg_precision, "recall": avg_recall}
 
-    # Helper function to predict a single rating for ALS
     @staticmethod
     def predict_als_rating(user_idx, item_idx, model):
         user_vector = model.user_factors[user_idx]
         item_vector = model.item_factors[item_idx]
         return user_vector.dot(item_vector)
 
-    #als model evaluation     
     @staticmethod
     def evaluate_als_model(model, train_matrix_T, test_matrix, user_item_matrix, k=10, rating_threshold=8.0):
         all_precisions, all_recalls = [], []
+        actual_ratings, predicted_ratings = [], []
         for user_idx in range(test_matrix.shape[0]):
             user_id = user_item_matrix.index[user_idx]
             relevant_items = set(user_item_matrix.columns[test_matrix[user_idx].indices[test_matrix[user_idx].data >= rating_threshold]])
@@ -291,356 +190,180 @@ class TrainModel:
             hits = len(recommended_items.intersection(relevant_items))
             all_precisions.append(hits / k)
             all_recalls.append(hits / len(relevant_items))
+            
         avg_precision = np.mean(all_precisions) if all_precisions else 0
         avg_recall = np.mean(all_recalls) if all_recalls else 0
-
         test_user_indices, test_item_indices = test_matrix.nonzero()
-        actual_ratings = test_matrix.data
-        predicted_ratings = []
-        for i in range(len(test_user_indices)):
-            u_idx = test_user_indices[i]
-            i_idx = test_item_indices[i]
-            pred = TrainModel.predict_als_rating(u_idx, i_idx, model)
-            predicted_ratings.append(pred)
-        
-        mse = mean_squared_error(actual_ratings, predicted_ratings) if actual_ratings.size > 0 else 0
-        rmse = np.sqrt(mse)
-        return {"rmse": rmse, "precision": avg_precision, "recall": avg_recall}
+        for u_idx, i_idx in zip(test_user_indices, test_item_indices):
+            actual_ratings.append(test_matrix[u_idx, i_idx])
+            predicted_ratings.append(TrainModel.predict_als_rating(u_idx, i_idx, model))
+            
+        mse = mean_squared_error(actual_ratings, predicted_ratings) if actual_ratings else 0
+        return {"rmse": np.sqrt(mse), "precision": avg_precision, "recall": avg_recall}
+
 
 class ModelsHyperparametersImprovment:
-
-##improve context base models##
-
-    # random forest regression hyperparameters improvement
     @staticmethod
-    def context_based_radom_forest_hyperparameters_improvement( x_train: pd.DataFrame, y_train:pd.Series):
-        param_grid = {
-            "n_estimators":[100,200,300,400,500,600,700,800],
-            'max_depth': [10, 20, 30, None],
-            'min_samples_leaf': [1, 2, 4],
-            'min_samples_split': [2, 5, 10]
-        }
+    def context_based_radom_forest_hyperparameters_improvement(x_train: pd.DataFrame, y_train: pd.Series):
+        param_grid = {"n_estimators": [100, 200, 300], 'max_depth': [10, 20, None]}
         model = RandomForestRegressor(random_state=42)
-        randon_search = RandomizedSearchCV(estimator=model, param_distributions=param_grid, n_iter=8, 
-                                   cv=3, scoring='neg_mean_squared_error', verbose=2, random_state=42, n_jobs=-1)
-        randon_search.fit(x_train,y_train)
-        logging.info(f"the best n_estimator for the model is: {randon_search.best_params_}")
+        randon_search = RandomizedSearchCV(estimator=model, param_distributions=param_grid, n_iter=8, cv=3, scoring='neg_mean_squared_error', random_state=42, n_jobs=-1)
+        randon_search.fit(x_train, y_train)
         return randon_search.best_estimator_
     
-    # extrem gradient boosting hyperparameters improvment
     @staticmethod
-    def context_based_XBGgradient_boosting_hyperparameters_improvment( x_train:pd.DataFrame, y_train:pd.Series):
-        param_grid = {
-                "n_estimators": [100, 200, 300, 400, 500],
-                "learning_rate": [0.05, 0.1, 0.2],
-                "max_depth": [3, 5, 7],
-                "subsample": [0.7, 0.8, 0.9],
-                "colsample_bytree": [0.7, 0.8, 0.9]
-        }
+    def context_based_XBGgradient_boosting_hyperparameters_improvment(x_train: pd.DataFrame, y_train: pd.Series):
+        param_grid = {"n_estimators": [100, 200], "learning_rate": [0.05, 0.1], "max_depth": [3, 5]}
         model = XGBRegressor(random_state=42)
-        random_search_XGBoost = RandomizedSearchCV(estimator=model, param_distributions=param_grid, n_iter=20,
-                                                   cv=3, scoring="neg_mean_squared_error", verbose=2, random_state=42, n_jobs=-1)
-        random_search_XGBoost.fit(x_train, y_train)
-        logging.info(f"model trained successfully, best parameters {random_search_XGBoost.best_params_}")
-        return random_search_XGBoost.best_estimator_
+        search = RandomizedSearchCV(estimator=model, param_distributions=param_grid, n_iter=8, cv=3, scoring="neg_mean_squared_error", random_state=42, n_jobs=-1)
+        search.fit(x_train, y_train)
+        return search.best_estimator_
     
-    #light gradient boosting hyperparameters improvment
     @staticmethod
-    def context_based_LGBgradient_boostin_hyperparameters_improvment(x_train:pd.DataFrame, y_train:pd.Series):
-        param_grid = {
-                "n_estimators": [100, 200, 300, 400, 500],
-                "learning_rate": [0.05, 0.1, 0.2],
-                "num_leaves": [20, 31, 40, 50],
-                "max_depth": [3, 5, 7],
-                "colsample_bytree": [0.7, 0.8, 0.9]
-        }
+    def context_based_LGBgradient_boostin_hyperparameters_improvment(x_train: pd.DataFrame, y_train: pd.Series):
+        param_grid = {"n_estimators": [100, 200], "learning_rate": [0.05, 0.1], "num_leaves": [20, 31]}
         model = LGBMRegressor(random_state=42)
-        random_search_LBGoost = RandomizedSearchCV(estimator=model, param_distributions=param_grid, n_iter=20,
-                                                   cv=3, scoring="neg_mean_squared_error", verbose=2, random_state=42, n_jobs=-1)
-        random_search_LBGoost.fit(x_train, y_train)
-        logging.info(f"model trained successfully, best parameters {random_search_LBGoost.best_params_}")
-        return random_search_LBGoost.best_estimator_
+        search = RandomizedSearchCV(estimator=model, param_distributions=param_grid, n_iter=8, cv=3, scoring="neg_mean_squared_error", random_state=42, n_jobs=-1)
+        search.fit(x_train, y_train)
+        return search.best_estimator_
 
-    ### user based models hyperparameters improvment ###
-
-    #knn hyperparameters improvment 
     @staticmethod
     def tune_knn_model(data):
-        """
-        Finds the best 'k' for a KNN model by iterating and checking RMSE.
-        'data' is the full dataset loaded by the surprise Reader.
-        """
         trainset, testset = surprise_split(data, test_size=0.2)
-        
-        k_values = [10, 20, 30, 40, 50]
-        rmse_results = {}
-        
-        for k in k_values:
+        best_rmse = float('inf')
+        best_k = 10
+        for k in [10, 20, 30]:
             model = KNNBasic(k=k, sim_options={'user_based': True}, verbose=False)
             model.fit(trainset)
             predictions = model.test(testset)
             rmse = accuracy.rmse(predictions, verbose=False)
-            rmse_results[k] = rmse
-        
-        best_k = min(rmse_results, key=rmse_results.get)
-        logging.info(f"Best k found: {best_k} with RMSE: {rmse_results[best_k]:.4f}")
-        
-        # Create and retrain the final model with the best k on all data
+            if rmse < best_rmse:
+                best_rmse, best_k = rmse, k
         final_model = KNNBasic(k=best_k, sim_options={'user_based': True})
         final_model.fit(data.build_full_trainset())
         return final_model
 
-    #svd model hyperparameters improvment
     @staticmethod
     def tune_svd_model(data):
-        param_grid = {
-            'n_factors': [50, 100, 150],
-            'n_epochs': [20, 30],
-            'lr_all': [0.005, 0.01],
-            'reg_all': [0.02, 0.1]
-        }
-        
+        param_grid = {'n_factors': [50, 100], 'n_epochs': [20, 30]}
         gs = SurpriseGridSearch(SVD, param_grid, measures=['rmse'], cv=3)
         gs.fit(data)
-        
-        best_params = gs.best_params['rmse']
-        logging.info(f"Best SVD RMSE score: {gs.best_score['rmse']:.4f}")
-        logging.info(f"Best SVD parameters: {best_params}")
-        
-        # Create and retrain the final model with the best parameters
-        final_model = SVD(**best_params)
+        final_model = SVD(**gs.best_params['rmse'])
         final_model.fit(data.build_full_trainset())
         return final_model
 
-    #als tuning model
     @staticmethod
     def tune_als_model(train_matrix):
-        # Split data for validation
         train, validate = implicit_split(train_matrix, split_count=2, split_by='user')
-        
-        param_grid = {
-            'factors': [30, 50, 80],
-            'regularization': [0.01, 0.1],
-            'iterations': [15, 20]
-        }
-        
+        param_grid = {'factors': [30, 50], 'iterations': [15, 20]}
         best_score = -1
         best_params = {}
-        
-        # Generate all combinations of parameters
-        all_params = [dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())]
-
-        for params in all_params:
+        for params in [dict(zip(param_grid.keys(), v)) for v in itertools.product(*param_grid.values())]:
             model = AlternatingLeastSquares(**params)
             model.fit(train.T)
-            
-            # Evaluate using Precision@10
             score = precision_at_k(model, train_user_items=train, test_user_items=validate, K=10)
-            
             if score > best_score:
-                best_score = score
-                best_params = params
-
-        logging.info(f"Best ALS Precision@10: {best_score:.4f}")
-        logging.info(f"Best ALS parameters: {best_params}")
-
-        # Create and retrain the final model on all data
+                best_score, best_params = score, params
         final_model = AlternatingLeastSquares(**best_params)
         final_model.fit(train_matrix.T)
         return final_model
 
-"""
-create a class to orgenize and compare the models 
-and pick up the best out of them train him and build 
-a pipeline to the main with him
-"""
-
 class ModelOrganaize:
-    
-    #regression models comparison
     @staticmethod
-    def compare_regression_model(linear_regression:BaseEstimator, random_tree_regression:BaseEstimator, extrem_gradient_boosting:BaseEstimator, light_gradient_boosting:BaseEstimator,
-                                y_test:pd.Series):
-
-        min_mse = float('inf')
-        min_rmse = float('inf')
-        mse_best_model = ''
-        rmse_best_model = ''
-
-        linear_regression_model = linear_regression[0]
-        linear_regression_prediction = linear_regression[1]
-
-        random_tree_regression_model = random_tree_regression[0]
-        random_tree_regression_prediction = random_tree_regression[1]
-
-        extrem_gradient_boosting_model = extrem_gradient_boosting[0]
-        extrem_gradient_boosting_prediction = extrem_gradient_boosting[1]
-
-        light_gradient_boosting_model = light_gradient_boosting[0]
-        light_gradient_boosting_prediction = light_gradient_boosting[1]
-
+    def compare_regression_model(linear_regression, random_tree_regression, extrem_gradient_boosting, light_gradient_boosting, y_test: pd.Series):
         comparation = {
-            "linear_regression" : TrainModel.context_based_models_evaluetion(linear_regression_prediction, y_test),
-            "random_tree_regression" : TrainModel.context_based_models_evaluetion(random_tree_regression_prediction, y_test),
-            "extrem_gradient_boosting" : TrainModel.context_based_models_evaluetion(extrem_gradient_boosting_prediction, y_test),
-            "light_gradient_boosting" : TrainModel.context_based_models_evaluetion(light_gradient_boosting_prediction, y_test)
+            "linear_regression": TrainModel.context_based_models_evaluetion(linear_regression[1], y_test),
+            "random_tree_regression": TrainModel.context_based_models_evaluetion(random_tree_regression[1], y_test),
+            "extrem_gradient_boosting": TrainModel.context_based_models_evaluetion(extrem_gradient_boosting[1], y_test),
+            "light_gradient_boosting": TrainModel.context_based_models_evaluetion(light_gradient_boosting[1], y_test)
         }
-
-        for model, eval in comparation.items():
-            for eval_type, evaluation in eval.items():
-                if eval_type == "mse":
-                    if evaluation < min_mse:
-                        min_mse = evaluation
-                        mse_best_model = model
-                elif eval_type == "rmse":
-                    if evaluation < min_rmse:
-                        min_rmse = evaluation
-                        rmse_best_model = model
+        best_rmse_val, best_model_name = float('inf'), None
+        for model_name, eval_dict in comparation.items():
+            if eval_dict['rmse'] < best_rmse_val:
+                best_rmse_val, best_model_name = eval_dict['rmse'], model_name
                 
-        logging.info(f"the best mse modle is: {mse_best_model}, and the best rmse model is {rmse_best_model}")
-        if rmse_best_model == "linear_regression":
-            joblib.dump(linear_regression_model,"linear_regression_model")
-            logging.info(f"saved model {rmse_best_model}")
-            return linear_regression
-        elif rmse_best_model == "random_tree_regression":
-            joblib.dump(random_tree_regression_model, "random_tree_regression_model")  
-            logging.info(f"saved model {rmse_best_model}")
-            return random_tree_regression
-        elif rmse_best_model == "extrem_gradient_boosting":
-            joblib.dump(extrem_gradient_boosting_model ,"extrem_gradient_boosting_model")
-            logging.info(f"saved model {rmse_best_model}")
-            return extrem_gradient_boosting
-        elif rmse_best_model == "light_gradient_boosting":
-            joblib.dump(light_gradient_boosting_model, "light_gradient_boosting_model")
-            logging.info(f"saved model {rmse_best_model}")
-            return light_gradient_boosting
-        
+        mapping = {
+            "linear_regression": linear_regression,
+            "random_tree_regression": random_tree_regression,
+            "extrem_gradient_boosting": extrem_gradient_boosting,
+            "light_gradient_boosting": light_gradient_boosting
+        }
+        joblib.dump(mapping[best_model_name][0], f"{best_model_name}_model.joblib")
+        return mapping[best_model_name]
     
-    #user based model comparison
     @staticmethod
     def compare_user_based_models(ratings_df: pd.DataFrame, train_matrix: csr_matrix, test_matrix: csr_matrix, user_item_matrix: pd.DataFrame, k: int = 10):
-        """
-        Trains, evaluates, and compares user-based models (KNN, SVD, ALS),
-        saves the best one based on Precision@k, and returns it.
-
-        Args:
-            ratings_df (pd.DataFrame): The full ratings dataframe for SVD.
-            train_matrix (csr_matrix): The training user-item sparse matrix for KNN/ALS.
-            test_matrix (csr_matrix): The testing user-item sparse matrix for KNN/ALS.
-            user_item_matrix (pd.DataFrame): The full user-item matrix (with indices) for context.
-            k (int): The number of recommendations to consider for precision/recall.
-
-        Returns:
-            The best performing trained model object.
-        """
-        logging.info("--- Starting User-Based Model Comparison ---")
-
-        # 1. Train all three models
-        logging.info("Training KNN model...")
         knn_model = TrainModel.knn_user_based_model(train_matrix)
-
-        logging.info("Training SVD model...")
         svd_model, _, svd_testset = TrainModel.svd_user_based_model(ratings_df)
-
-        logging.info("Training ALS model...")
         als_model = TrainModel.als_user_based_model(train_matrix)
 
-        # 2. Evaluate all three models
-        logging.info("\n--- Evaluating Models ---")
         knn_scores = TrainModel.evaluate_knn_model(knn_model, train_matrix, test_matrix, user_item_matrix, k=k)
         svd_scores = TrainModel.evaluate_svd_model(svd_model, svd_testset, k=k)
         als_scores = TrainModel.evaluate_als_model(als_model, train_matrix.T, test_matrix, user_item_matrix, k=k)
 
-        # 3. Store models and their evaluation results
-        trained_models = {
-            "KNN": knn_model,
-            "SVD": svd_model,
-            "ALS": als_model
-        }
+        trained_models = {"KNN": knn_model, "SVD": svd_model, "ALS": als_model}
+        evaluations = {"KNN": knn_scores, "SVD": svd_scores, "ALS": als_scores}
         
-        evaluation_results = {
-            "KNN": knn_scores,
-            "SVD": svd_scores,
-            "ALS": als_scores
-        }
+        best_precision, best_model_name = -1.0, None
+        for name, scores in evaluations.items():
+            if scores['precision'] > best_precision:
+                best_precision, best_model_name = scores['precision'], name
+                
+        joblib.dump(trained_models[best_model_name], f"best_user_based_{best_model_name}_model.joblib")
+        return trained_models[best_model_name]
 
-        # 4. Compare models based on Precision@k to find the best one
-        best_precision = -1.0
-        best_model_name = None
-
-        logging.info("\n--- Model Performance Summary ---")
-        for name, scores in evaluation_results.items():
-            precision = scores.get('precision', 0)
-            recall = scores.get('recall', 0)
-            rmse = scores.get('rmse', float('inf'))
-            logging.info(f"Model: {name:<10} | Precision@{k}: {precision:.4f} | Recall@{k}: {recall:.4f} | RMSE: {rmse:.4f}")
-            
-            if precision > best_precision:
-                best_precision = precision
-                best_model_name = name
-
-        # 5. Save the best model and return it
-        if best_model_name:
-            best_model_object = trained_models[best_model_name]
-            filename = f"best_user_based_{best_model_name}_model.joblib"
-            joblib.dump(best_model_object, filename)
-            
-            logging.info(f"\nBest user-based model is '{best_model_name}' with a Precision@{k} of {best_precision:.4f}.")
-            logging.info(f"Model saved successfully as '{filename}'")
-            return best_model_object
-        else:
-            logging.warning("Could not determine the best user-based model.")
-            return None
-
-
-"""
-building  a hybride class that combained both the context based model
-and the user based models. by giving more weight to each model by
-the amount of rating that a user have
-"""
 class HybridRecommender:
-
-    """
-    building a constructor to the class
-    get all the required parameters for the models 
-    use to handle the recommends functions of the class 
-    """
-    #get the data frame from context_base_df in DataHandler
-    def __init__(self, context_based_model_and_prediction:Tuple[BaseEstimator,np.array], user_based_model:BaseEstimator,
-                  user_item_matrix:pd.DataFrame, train_df:pd.DataFrame, test_df:pd.DataFrame, data_df:pd.DataFrame, user_id:int):
+    def __init__(self, context_based_model_and_prediction: Tuple[BaseEstimator, np.array], user_based_model: BaseEstimator,
+                  user_item_matrix: pd.DataFrame, train_df: pd.DataFrame, test_df: pd.DataFrame, data_df: pd.DataFrame, user_id: int):
         self.context_based_model = context_based_model_and_prediction[0]
-        self.context_based_prediction = context_based_model_and_prediction[1]
         self.user_based_model = user_based_model
         self.user_item_matrix = user_item_matrix
-        self.train_df = train_df
-        self.test_df = test_df
         self.data_df = data_df
         self.user_id = user_id
 
-    #helper function that calaulat the weight for user/book by rating
     @staticmethod
     def custom_growth_curved(x, midpoint=10, steepness=0.3):
-        def shifted_sigmoid(val):
-            return 1/(1+np.exp(-steepness * (val - midpoint)))
-        
-        y_offset = shifted_sigmoid(0)        
-        value = shifted_sigmoid(x)        
-        final_value = (value - y_offset) / (1 - y_offset)        
+        return np.clip((1/(1+np.exp(-steepness * (x - midpoint))) - 1/(1+np.exp(steepness * midpoint))) / (1 - 1/(1+np.exp(steepness * midpoint))), 0, 1)
 
-        return np.clip(final_value, 0, 1)
-
-    #helper function create a recommendation of the top 300 book that fit to the user by context base model
-    def book_sample_recommmend(self)->pd.DataFrame:
+    def book_sample_recommmend(self) -> pd.DataFrame:
         user_books_df = self.data_df[self.data_df["user_id"] == self.user_id]["isbn"].unique()
         all_books = self.data_df["isbn"].unique()
         unread_books = np.setdiff1d(all_books, user_books_df)
-        filtered_df = self.data_df[self.data_df["isbn"].isin(unread_books)]
-        from DataHandler import DataPreProcess, FeaturesEngineer
-        preprocess_df = DataPreProcess.hybride_model_sample(filtered_df)
-        prediction_df = FeaturesEngineer.hybrid_context_based_features_engineer(preprocess_df)
+        return pd.DataFrame({"isbn": unread_books})
+    
+    def get_data_frame(self, sample_df: pd.DataFrame) -> pd.DataFrame:
+        ratings = joblib.load("cleaned_data_dict.joblib")
+        books = ratings["Books"]
+        users = ratings["Users"]
         
-        prediction = self.context_based_model.predict(prediction_df)
-        preprocess_df["prediction"] = prediction
-        final_df = preprocess_df.sort_values("prediction", ascending=False).head(300)
-        return final_df
+        df = sample_df.merge(books, on="isbn", how="left")
+        df["user_id"] = self.user_id
+        df = df.merge(users, on="user_id", how="left")
+        
+        prediction_df = FeaturesEngineer.hybrid_context_based_features_engineer(df)
+        
+        encoder = joblib.load("hashing_encoder.joblib")
+        scaler = joblib.load("standard_scaler.joblib")
+        cat_cols = prediction_df.select_dtypes(include=['object', 'category']).columns.tolist()
+        if cat_cols:
+            prediction_df = encoder.transform(prediction_df)
+        scaled_features = scaler.transform(prediction_df)
+        
+        sample_df["context_score"] = self.context_based_model.predict(scaled_features)
+        return sample_df
 
+    def weight_per_model(self, df: pd.DataFrame) -> float:
+        user_ratings_count = self.data_df[self.data_df["user_id"] == self.user_id].shape[0] if "user_id" in self.data_df.columns else 0
+        return self.custom_growth_curved(user_ratings_count)
+
+    def recommend(self, alpha: float, df: pd.DataFrame) -> pd.DataFrame:
+        # User Based Logic
+        try:
+            train_matrix = joblib.load("train_matrix.joblib")
+            user_recs = TrainModel.user_based_knn_prediction(self.user_id, self.user_based_model, self.user_item_matrix, train_matrix)
+        except Exception:
+            user_recs = pd.Series(dtype=float)
+            
+        df["user_score"] = df["isbn"].map(user_recs).fillna(0)
+        df["final_score"] = alpha * df["user_score"] + (1 - alpha) * df["context_score"]
+        return df.sort_values("final_score", ascending=False).head(10)
