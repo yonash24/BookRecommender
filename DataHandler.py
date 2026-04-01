@@ -14,6 +14,7 @@ logging.basicConfig(level=logging.INFO)
 
 class importData:
     @staticmethod
+    # Downloads the book recommendation dataset from Kaggle.
     def import_data():
         Path("data_dir").mkdir(exist_ok=True)
         cur_path = Path.cwd()
@@ -26,6 +27,7 @@ class importData:
         api.dataset_download_files("arashnic/book-recommendation-dataset",path=dest_path,unzip=True)
         
     @staticmethod
+    # Deletes unnecessary PNG files from the data directory.
     def delet_unnececatty_files():
         dir_path = Path("data_dir")
         if not dir_path.exists():
@@ -40,6 +42,7 @@ class importData:
                 print(f"an error occured {e}")
 
     @staticmethod
+    # Loads CSV files from the data directory into a dictionary of DataFrames.
     def to_dataFrme():
         data_dict = {}
         dir_path = Path("data_dir")
@@ -51,6 +54,7 @@ class importData:
         return data_dict
     
     @staticmethod
+    # Runs the full pipeline to import and load the data.
     def import_data_pipeline():
         importData.import_data()
         importData.delet_unnececatty_files()
@@ -60,17 +64,20 @@ class importData:
 
 class GetDataInfo:
     @staticmethod
+    # Prints the shape of each DataFrame in the data dictionary.
     def get_data_shap(data_dict: Dict[str, pd.DataFrame]):
         for file, df in data_dict.items():
             print(f"the dataFrame shape of {file} is {df.shape}")
 
     @staticmethod
+    # Prints the info summary of each DataFrame in the data dictionary.
     def get_data_info(data_dict: Dict[str, pd.DataFrame]):
         for file, df in data_dict.items():
             print(f"the dataFrame {file} info is:")
             df.info()
 
     @staticmethod
+    # Prints the count of missing values for each column in the DataFrames.
     def get_missing_vals(data_dict: Dict[str, pd.DataFrame]):
         for file, df in data_dict.items():
             missing_val = df.isnull().sum()
@@ -82,6 +89,7 @@ class GetDataInfo:
                     print(f"in col {col} there are {val} missing values")
 
     @staticmethod
+    # Visualizes the distribution of book ratings using a bar chart.
     def get_rating_destribution(data_dict: Dict[str, pd.DataFrame]):
         df = data_dict["Ratings"]
         rating_dist = df["book_rating"].value_counts().sort_index()
@@ -93,6 +101,7 @@ class GetDataInfo:
         plt.show()
 
     @staticmethod
+    # Visualizes the distribution of mean ratings per book using a histogram.
     def book_mean_rate(data_dict: Dict[str, pd.DataFrame]):
         df = data_dict["Ratings"]
         plot_df = df.groupby("isbn")["book_rating"].mean()
@@ -104,6 +113,7 @@ class GetDataInfo:
         plt.show()
 
     @staticmethod
+    # Visualizes the distribution of median ratings per book using a histogram.
     def book_median_rate(data_dict: Dict[str, pd.DataFrame]):
         df = data_dict["Ratings"]
         plot_df = df.groupby("isbn")["book_rating"].median()
@@ -115,6 +125,7 @@ class GetDataInfo:
         plt.show()
 
     @staticmethod
+    # Visualizes the age distribution of users using a histogram.
     def user_mean_age(data_dict: Dict[str, pd.DataFrame]):
         df = data_dict["Users"]
         plot_df = df["age"].dropna()
@@ -126,6 +137,7 @@ class GetDataInfo:
         plt.show()
 
     @staticmethod
+    # Visualizes the top 20 locations with the most users.
     def highest_raters_location(data_dict: Dict[str, pd.DataFrame]):
         df = data_dict["Users"]
         location_df = df["location"].value_counts().head(20)
@@ -139,6 +151,7 @@ class GetDataInfo:
         plt.show()
 
     @staticmethod
+    # Logs and returns the minimum and maximum publication years.
     def year_range(data_dict: Dict[str, pd.DataFrame]):
         df = data_dict["Books"]
         min_year = df["year_of_publication"].min()
@@ -147,6 +160,7 @@ class GetDataInfo:
         return min_year, max_year
 
     @staticmethod
+    # Logs and returns the count of unique authors and publishers.
     def unique_authors_and_publishers(data_dict: Dict[str, pd.DataFrame]):
         df = data_dict["Books"]
         publishers_amount = df["publisher"].nunique()
@@ -155,6 +169,7 @@ class GetDataInfo:
         return publishers_amount, writers_amount
 
     @staticmethod
+    # Visualizes the top 20 most frequently rated books.
     def highest_raters_books(data_dict: Dict[str, pd.DataFrame]):
         df = data_dict["Ratings"]
         rates_df = df["isbn"].value_counts().head(20)
@@ -168,6 +183,7 @@ class GetDataInfo:
         plt.show()
 
     @staticmethod
+    # Visualizes the top 20 books with the highest mean ratings.
     def top_20_rated_books(data_dict: Dict[str, pd.DataFrame]):
         df = data_dict["Ratings"]
         plot_df = df.groupby("isbn")["book_rating"].mean()
@@ -181,6 +197,7 @@ class GetDataInfo:
         plt.show()
 
     @staticmethod
+    # Visualizes the top 20 users with the most ratings.
     def most_active_users(data_dict: Dict[str, pd.DataFrame]):
         df = data_dict["Ratings"]
         rates_df = df["user_id"].value_counts().head(20)
@@ -196,6 +213,7 @@ class GetDataInfo:
 
 class DataClean:
     @staticmethod
+    # Removes irrelevant columns from the Books DataFrame.
     def drop_unrelevat_cols(data_dict: Dict[str, pd.DataFrame]) -> dict:
         cols_to_keep = ["isbn", "book_title", "book_author", "year_of_publication", "publisher"]
         if "Books" in data_dict:
@@ -203,6 +221,7 @@ class DataClean:
         return data_dict
     
     @staticmethod
+    # Standardizes column headers to lowercase with underscores.
     def cols_heads_standart(data_dict: Dict[str, pd.DataFrame]) -> dict:
         for file, df in data_dict.items():
             cols = df.columns.str.lower()
@@ -214,6 +233,7 @@ class DataClean:
         return data_dict
     
     @staticmethod
+    # Fills missing values and validates years in the Books DataFrame.
     def clean_books_df(data_dict: Dict[str, pd.DataFrame]) -> dict:
         fill_vals = {
             "isbn": "unKnown", "book_title": "unKnown", "book_author": "unKnown",
@@ -230,6 +250,7 @@ class DataClean:
         return data_dict
     
     @staticmethod
+    # Fills missing values and filters realistic ages in the Users DataFrame.
     def clean_users_df(data_dict: Dict[str, pd.DataFrame]) -> dict:
         fill_vals = {"user_id": "unKnown", "location": "unKnown", "age": 0}
         data_dict["Users"] = data_dict["Users"].fillna(value=fill_vals)
@@ -239,6 +260,7 @@ class DataClean:
         return data_dict
     
     @staticmethod
+    # Fills missing values and filters out unrated books in the Ratings DataFrame.
     def clean_ratings_df(data_dict: Dict[str, pd.DataFrame]) -> dict:
         fill_vals = {"user_id": 0, "isbn": "unKnown", "book_rating": 0}
         data_dict["Ratings"] = data_dict["Ratings"].fillna(value=fill_vals)
@@ -248,6 +270,7 @@ class DataClean:
         return data_dict
     
     @staticmethod
+    # Enforces specific data types for columns in each DataFrame.
     def data_ensure_type(data_dict: Dict[str, pd.DataFrame]):
         col_type = {
             "Users": {"user_id": "Int64", "location": "object", "age": "Int64"},
@@ -263,12 +286,14 @@ class DataClean:
         return data_dict
     
     @staticmethod
+    # Removes duplicate rows from every DataFrame in the dictionary.
     def delete_dups(data_dict: Dict[str, pd.DataFrame]) -> dict:
         for file, df in data_dict.items():
             data_dict[file] = df.drop_duplicates()
         return data_dict
     
     @staticmethod
+    # Cleans and standardizes text content in object-type columns.
     def uniform_object_cols(data_dict: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
         for file, df in data_dict.items():
             for col in df.columns:
@@ -282,6 +307,7 @@ class DataClean:
         return data_dict
     
     @staticmethod
+    # Executes the complete data cleaning sequence.
     def cleaning_data_pipeline(data_dict: Dict[str, pd.DataFrame]) -> Dict[str, pd.DataFrame]:
         data_dict = DataClean.cols_heads_standart(data_dict)
         data_dict = DataClean.drop_unrelevat_cols(data_dict)
@@ -297,6 +323,7 @@ class DataClean:
 
 class DataPreProcess:
     @staticmethod
+    # Merges Ratings, Books, and Users DataFrames for context-based analysis.
     def context_based_df(data_dict: Dict[str, pd.DataFrame]) -> pd.DataFrame:
         ratings = data_dict["Ratings"]
         books = data_dict["Books"]
@@ -307,6 +334,7 @@ class DataPreProcess:
         return df
 
     @staticmethod
+    # Fully prepares context-based data including encoding and scaling with leakage prevention.
     def context_based_data_preprocessing_pipeline(data_dict: Dict[str, pd.DataFrame]):
         df = DataPreProcess.context_based_df(data_dict)
         df = df.dropna(subset=['book_rating'])
@@ -343,12 +371,14 @@ class DataPreProcess:
         return x_train_scaled, x_test_scaled, y_train, y_test
 
     @staticmethod
+    # Splits the ratings data into training and testing sets for SVD models.
     def user_based_data_svd(data_dict: Dict[str, pd.DataFrame], test_size=0.2, random_state=42) -> Tuple[pd.DataFrame, pd.DataFrame]:
         rating_df = data_dict["Ratings"]
         train_df, test_df = train_test_split(rating_df, test_size=test_size, random_state=random_state)
         return train_df, test_df
 
     @staticmethod
+    # Creates sparse user-item matrices and splits them for ALS and KNN models.
     def user_based_data_als_knn(data_dict, test_size=0.2, random_state=42):
         rating_df = data_dict["Ratings"]
         users = rating_df["user_id"].astype('category')
@@ -368,6 +398,7 @@ class DataPreProcess:
 
 class FeaturesEngineer:
     @staticmethod
+    # Generates and maps statistical features from training data to prevent leakage.
     def context_base_models_features_engineer(x_train: pd.DataFrame, x_test: pd.DataFrame):
         # Maps logic preventing leakage to be computed only on train
         feature_maps = {
@@ -406,6 +437,7 @@ class FeaturesEngineer:
         return x_train.drop(cols_to_drop, axis=1), x_test.drop(cols_to_drop, axis=1)
 
     @staticmethod
+    # Maps pre-calculated features to a DataFrame for hybrid model inference.
     def hybrid_context_based_features_engineer(df: pd.DataFrame) -> pd.DataFrame:
         """ Uses loaded artifacts so no calculation leak happens on inference. """
         feature_maps = joblib.load("feature_maps.joblib")
@@ -426,6 +458,7 @@ class FeaturesEngineer:
         return df
 
     @staticmethod
+    # Converts a dense DataFrame into a sparse user-item matrix for hybrid models.
     def hybrid_knn_als_data(df: pd.DataFrame, test_size=0.2, random_state=42) -> Tuple[pd.DataFrame, csr_matrix]:
         users = df["user_id"].astype('category')
         books = df["isbn"].astype('category')
